@@ -4,12 +4,14 @@ const API_KEY = 'REDACTED_OPENROUTER_KEY';
 // Define models for different modes
 const MODELS = {
     writing: [
+        { value: 'google/gemini-2.0-flash-exp:free', label: 'Gemini 2.0 [writing, analysis, coding]' },
         { value: 'deepseek/deepseek-chat', label: 'DeepSeek Chat [writing, analysis, coding]', maxFreeUsage: 25 },
         { value: 'mistralai/mistral-7b-instruct', label: 'Mistral 7B [writing, analysis]', maxFreeUsage: 50 },
         { value: 'meta-llama/llama-2-13b-chat', label: 'Llama 2 13B [writing, creative]', maxFreeUsage: 50 },
         { value: 'openchat/openchat-7b', label: 'OpenChat 7B [writing, chat]', maxFreeUsage: 50 }
     ],
     coding: [
+        { value: 'google/gemini-2.0-flash-exp:free', label: 'Gemini 2.0 [coding, analysis, writing]' },
         { value: 'deepseek/deepseek-chat', label: 'DeepSeek Chat [coding, analysis, writing]', maxFreeUsage: 25 },
         { value: 'nousresearch/nous-hermes-llama2-13b', label: 'Nous Hermes 13B [coding, reasoning]', maxFreeUsage: 50 }
     ]
