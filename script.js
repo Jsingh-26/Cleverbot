@@ -1,248 +1,295 @@
 const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const API_KEY = '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';
 
-// Define models for different modes
-const MODELS = {
-    writing: [
-        { value: 'google/gemini-2.0-flash-exp:free', label: 'Gemini 2.0 [writing, analysis, coding]' },
-        { value: 'deepseek/deepseek-chat', label: 'DeepSeek Chat [writing, analysis, coding]', maxFreeUsage: 25 },
-        { value: 'mistralai/mistral-7b-instruct', label: 'Mistral 7B [writing, analysis]', maxFreeUsage: 50 },
-        { value: 'meta-llama/llama-2-13b-chat', label: 'Llama 2 13B [writing, creative]', maxFreeUsage: 50 },
-        { value: 'openchat/openchat-7b', label: 'OpenChat 7B [writing, chat]', maxFreeUsage: 50 }
-    ],
-    coding: [
-        { value: 'google/gemini-2.0-flash-exp:free', label: 'Gemini 2.0 [coding, analysis, writing]' },
-        { value: 'deepseek/deepseek-chat', label: 'DeepSeek Chat [coding, analysis, writing]', maxFreeUsage: 25 },
-        { value: 'nousresearch/nous-hermes-llama2-13b', label: 'Nous Hermes 13B [coding, reasoning]', maxFreeUsage: 50 }
-    ]
-};
+// Define models in order of preference
+const MODELS = [
+    'google/gemini-exp-1206-free',
+    'google/gemini-2.0-flash-exp-free',
+    'google/gemini-flash-1.5-8b-exp',
+    'google/gemini-flash-1.5-exp',
+    'google/gemini-pro-1.5-exp',
+    'google/gemini-exp-1121-free',
+    'google/learnit-1.5-pro-experimental-free',
+    'google/gemini-exp-1114-free',
+    'google/gemini-2.0-flash-thinking-exp-free',
+    'meta-llama/llama-3.2-13b-vision-instruct-free',
+    'meta-llama/llama-3.1-8b-instruct-free',
+    'meta-llama/llama-3.1-70b-instruct-free',
+    'qwen/qwen-4-7b-instruct-free',
+    'google/gemma-2-9b-it-free',
+    'mistral/mistral-7b-instruct-free',
+    'microsoft/phi-3-mini-128k-instruct-free',
+    'microsoft/phi-3-medium-128k-instruct-free',
+    'meta-llama/llama-3-8b-instruct-free',
+    'openchat/openchat-7b-free',
+    'meta-llama/llama-3.1-40b5-instruct-free',
+    'meta-llama/llama-3.2-1b-instruct-free',
+    'meta-llama/llama-3.2-3b-instruct-free',
+    'meta-llama/llama-3.2-90b-vision-instruct-free',
+    'undi95/toppy-m-7b-free',
+    'huggingface/44/zephy-7b-beta-free',
+    'gryphe/mythomix-13b-free'
+];
 
-let currentMode = 'writing';
+let isProcessing = false;
+let lastUserMessage = '';
+let currentModelIndex = 0;
 
-// Initialize usage counters in localStorage if not exists
-function initializeUsageCounters() {
-    const usage = localStorage.getItem('modelUsage');
-    if (!usage) {
-        const initialUsage = {};
-        Object.values(MODELS).flat().forEach(model => {
-            initialUsage[model.value] = 0;
+// Function to format model name for display
+function formatModelName(modelId) {
+    const parts = modelId.split('/');
+    const provider = parts[0];
+    const model = parts[1].split('-').map(word => 
+        word.charAt(0).toUpperCase() + word.slice(1)
+    ).join(' ');
+    return `${provider.charAt(0).toUpperCase() + provider.slice(1)} - ${model}`;
+}
+
+// Function to create message wrapper with avatar
+function createMessageWrapper(type) {
+    const wrapper = document.createElement('div');
+    wrapper.className = `message-wrapper ${type}-message`;
+    
+    const content = document.createElement('div');
+    content.className = 'message-content';
+    
+    const avatar = document.createElement('div');
+    avatar.className = `avatar ${type}-avatar`;
+    avatar.textContent = type === 'user' ? 'U' : 'C';
+    
+    const message = document.createElement('div');
+    message.className = 'message';
+    
+    content.appendChild(avatar);
+    content.appendChild(message);
+    wrapper.appendChild(content);
+    
+    return { wrapper, message };
+}
+
+// Function to create model list
+function createModelList(modelInfo) {
+    const modelList = modelInfo.querySelector('.model-list');
+    modelList.innerHTML = '';
+    
+    MODELS.forEach((modelId, index) => {
+        const option = document.createElement('div');
+        option.className = 'model-option';
+        option.textContent = formatModelName(modelId);
+        option.addEventListener('click', () => {
+            modelList.classList.remove('show');
+            retryWithModel(index);
         });
-        localStorage.setItem('modelUsage', JSON.stringify(initialUsage));
-    }
-}
-
-// Get remaining uses for a model
-function getRemainingUses(modelId) {
-    const usage = JSON.parse(localStorage.getItem('modelUsage') || '{}');
-    const model = Object.values(MODELS).flat().find(m => m.value === modelId);
-    const used = usage[modelId] || 0;
-    return model.maxFreeUsage - used;
-}
-
-// Increment usage counter for a model
-function incrementUsage(modelId) {
-    const usage = JSON.parse(localStorage.getItem('modelUsage') || '{}');
-    usage[modelId] = (usage[modelId] || 0) + 1;
-    localStorage.setItem('modelUsage', JSON.stringify(usage));
-    updateModelDescription(); // Update the display
-}
-
-function switchMode(mode) {
-    currentMode = mode;
-    
-    // Update buttons
-    document.querySelectorAll('.mode-button').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.mode === mode);
+        modelList.appendChild(option);
     });
-
-    // Update coding options visibility
-    const codingOptions = document.getElementById('coding-options');
-    codingOptions.classList.toggle('visible', mode === 'coding');
-
-    // Clear input and result
-    const textarea = document.getElementById('topic');
-    const resultDiv = document.getElementById('result');
-    textarea.value = '';
-    resultDiv.innerHTML = '';
-
-    // Update placeholder text
-    textarea.placeholder = mode === 'writing' 
-        ? 'Enter your essay topic here...'
-        : 'Describe what you want to code (e.g., "Create a function to calculate fibonacci numbers")...';
-
-    // Update models dropdown
-    populateModels(mode);
 }
 
-function populateModels(mode) {
-    const select = document.getElementById('model');
-    select.innerHTML = MODELS[mode]
-        .map(model => `<option value="${model.value}">${model.label}</option>`)
-        .join('');
-    updateModelDescription();
+// Function to create model info section
+function createModelInfo(modelId, messageWrapper) {
+    const template = document.getElementById('model-info-template');
+    const modelInfo = template.content.cloneNode(true);
+    modelInfo.querySelector('.model-name').textContent = formatModelName(modelId);
+    messageWrapper.appendChild(modelInfo);
 }
 
-function updateModelDescription() {
-    const select = document.getElementById('model');
-    const descriptionDiv = document.getElementById('modelDescription');
-    const selectedOption = select.options[select.selectedIndex];
-    const modelId = selectedOption.value;
-    const capabilities = selectedOption.text.match(/\[(.*?)\]/)[1];
-    const remaining = getRemainingUses(modelId);
-    
-    descriptionDiv.innerHTML = `
-        <div>Capabilities: ${capabilities}</div>
-        <div style="color: ${remaining < 5 ? '#dc2626' : '#666'}; margin-top: 4px;">
-            Estimated free uses remaining: ${remaining}
+// Function to create thinking indicator
+function createThinkingIndicator() {
+    const { wrapper, message } = createMessageWrapper('bot');
+    message.innerHTML = `
+        <div class="thinking">
+            <span>Thinking</span>
+            <div class="dots">
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+            </div>
         </div>
     `;
+    document.querySelector('.message-container').appendChild(wrapper);
+    return wrapper;
 }
 
-function formatCode(content, language) {
-    // First, try to extract code blocks with markdown syntax
-    const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
-    let formattedContent = content;
-    let hasCodeBlock = false;
-
-    formattedContent = formattedContent.replace(codeBlockRegex, (_, lang, code) => {
-        hasCodeBlock = true;
-        const highlightLang = lang || language;
-        return `<div class="code-block">
-            <div class="code-header">${highlightLang}</div>
-            <pre><code class="language-${highlightLang}">${code.trim()}</code></pre>
-        </div>`;
-    });
-
-    // If no code blocks found, wrap the entire content as a code block
-    if (!hasCodeBlock && currentMode === 'coding') {
-        formattedContent = `<div class="code-block">
-            <div class="code-header">${language}</div>
-            <pre><code class="language-${language}">${content.trim()}</code></pre>
-        </div>`;
-    }
-
-    return formattedContent;
-}
-
-async function generateContent() {
-    const topicInput = document.getElementById('topic');
-    const modelSelect = document.getElementById('model');
-    const generateButton = document.getElementById('generate');
-    const loadingDiv = document.getElementById('loading');
-    const resultDiv = document.getElementById('result');
-
-    const topic = topicInput.value.trim();
-    const selectedModel = modelSelect.value;
-
-    if (!topic) {
-        alert('Please enter your request.');
-        return;
-    }
-
-    generateButton.disabled = true;
-    loadingDiv.style.display = 'block';
-    resultDiv.textContent = '';
-
-    let prompt;
-    const language = document.getElementById('language').value;
+// Function to safely append messages to chat display
+function appendMessage(content, type, modelId = null) {
+    const chatDisplay = document.getElementById('chat-display');
+    const messageContainer = chatDisplay.querySelector('.message-container');
     
-    if (currentMode === 'writing') {
-        prompt = `Write a well-structured, informative 500-word essay about the following topic: ${topic}. 
-        The essay should include an introduction, body paragraphs, and a conclusion. 
-        Make it engaging and informative while maintaining academic standards.`;
-    } else {
-        prompt = `Write a complete, working code solution in ${language} for the following request: ${topic}
-        Please provide:
-        1. A clean, efficient implementation
-        2. Brief comments explaining the code
-        3. Example usage if applicable
-        Make sure the code follows best practices and is production-ready.
-        Use markdown code blocks with language specification for the code.`;
+    const { wrapper, message } = createMessageWrapper(type);
+    message.textContent = content;
+    
+    messageContainer.appendChild(wrapper);
+    
+    if (type === 'bot' && modelId) {
+        createModelInfo(modelId, wrapper);
     }
+    
+    chatDisplay.scrollTop = chatDisplay.scrollHeight;
+    return message;
+}
 
+// Function to handle errors
+function handleError(error, modelIndex) {
+    console.error(`Error with model ${MODELS[modelIndex]}:`, error);
+    if (modelIndex === MODELS.length - 1) {
+        appendMessage('Error: Unable to get response from any available model. Please try again later.', 'error');
+    }
+    return false;
+}
+
+// Function to enable/disable input controls
+function setInputState(enabled) {
+    const chatInput = document.getElementById('chat-input');
+    const sendButton = document.getElementById('send');
+    
+    chatInput.disabled = !enabled;
+    sendButton.disabled = !enabled;
+    
+    if (enabled) {
+        chatInput.focus();
+        const thinkingIndicator = document.querySelector('.thinking')?.closest('.message-wrapper');
+        if (thinkingIndicator) {
+            thinkingIndicator.remove();
+        }
+    }
+}
+
+// Function to retry with specific model
+async function retryWithModel(modelIndex) {
+    if (isProcessing || !lastUserMessage) return;
+    
+    currentModelIndex = modelIndex;
+    if (currentModelIndex >= MODELS.length) {
+        currentModelIndex = 0;
+    }
+    
+    await sendMessage(lastUserMessage, currentModelIndex);
+}
+
+async function sendMessage(message = null, startFromModel = 0) {
+    if (isProcessing) return;
+    
+    const chatInput = document.getElementById('chat-input');
+    const userMessage = message || chatInput.value.trim();
+    
+    if (!userMessage) return;
+    
+    isProcessing = true;
+    lastUserMessage = userMessage;
+    currentModelIndex = startFromModel;
+    
     try {
-        const response = await fetch(API_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${API_KEY}`,
-                'HTTP-Referer': window.location.origin,
-                'X-Title': 'AI Assistant'
-            },
-            body: JSON.stringify({
-                model: selectedModel,
-                messages: [
-                    {
-                        role: 'user',
-                        content: prompt
+        setInputState(false);
+        
+        if (!message) {
+            appendMessage(userMessage, 'user');
+            chatInput.value = '';
+        }
+        
+        // Create thinking indicator only after we have a valid message
+        let thinkingIndicator = createThinkingIndicator();
+        
+        for (let i = startFromModel; i < MODELS.length; i++) {
+            currentModelIndex = i;
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${API_KEY}`,
+                        'HTTP-Referer': window.location.origin,
+                        'X-Title': 'Cleverbot'
+                    },
+                    body: JSON.stringify({
+                        model: MODELS[i],
+                        messages: [
+                            { role: 'user', content: userMessage }
+                        ],
+                        stream: true,
+                    }),
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error?.message || 'Failed to fetch response');
+                }
+                
+                const reader = response.body.getReader();
+                let botMessageElement = null;
+                let messageWrapper = null;
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    const textDecoder = new TextDecoder();
+                    const chunk = textDecoder.decode(value);
+                    
+                    for (const line of chunk.split('\n')) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.substring(6));
+                                if (data.choices && data.choices[0].delta?.content) {
+                                    if (!botMessageElement) {
+                                        if (thinkingIndicator) {
+                                            thinkingIndicator.remove();
+                                            thinkingIndicator = null;
+                                        }
+                                        const elements = createMessageWrapper('bot');
+                                        messageWrapper = elements.wrapper;
+                                        botMessageElement = elements.message;
+                                        document.querySelector('.message-container').appendChild(messageWrapper);
+                                    }
+                                    botMessageElement.textContent += data.choices[0].delta.content;
+                                    document.getElementById('chat-display').scrollTop = document.getElementById('chat-display').scrollHeight;
+                                }
+                            } catch (e) {
+                                console.error('Error parsing stream:', e);
+                            }
+                        }
                     }
-                ],
-                temperature: 0.7,
-                max_tokens: 1500
-            })
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            if (data.error) {
-                // Handle quota errors
-                if (data.error.type === 'insufficient_quota') {
-                    const errorMessage = `Usage limit reached for ${selectedModel.split('/')[1]}. 
-                    This is a paid model and the free credits have been exhausted. 
-                    Please try using a different model or try again later.`;
-                    throw new Error(errorMessage);
                 }
-                // Handle rate limit errors
-                else if (data.error.message?.toLowerCase().includes('rate limit')) {
-                    const errorMessage = `Rate limit reached. You're making requests too quickly. 
-                    Please wait a few minutes before trying again.`;
-                    throw new Error(errorMessage);
+                
+                if (messageWrapper) {
+                    createModelInfo(MODELS[i], messageWrapper);
                 }
-                // Handle other quota-related errors
-                else if (data.error.message?.toLowerCase().includes('quota')) {
-                    const errorMessage = `API quota exceeded. 
-                    ${data.error.message}
-                    Please try using a different model or try again later.`;
-                    throw new Error(errorMessage);
-                }
-                // Handle other API errors
-                else {
-                    throw new Error(data.error.message || 'API request failed');
+                
+                return;
+                
+            } catch (error) {
+                if (!handleError(error, i)) {
+                    continue;
                 }
             }
-            throw new Error('API request failed');
         }
-
-        // Increment usage counter on successful request
-        incrementUsage(selectedModel);
-
-        const content = data.choices[0].message.content;
-        
-        if (currentMode === 'coding') {
-            resultDiv.innerHTML = formatCode(content, language);
-            // Trigger Prism to highlight the code
-            Prism.highlightAll();
-        } else {
-            resultDiv.textContent = content;
-        }
-
-    } catch (error) {
-        console.error('Error:', error);
-        resultDiv.innerHTML = `<div class="error">
-            <strong>Error:</strong><br>
-            ${error.message || 'Sorry, there was an error processing your request. Please try again.'}
-            ${error.message?.includes('limit') || error.message?.includes('quota') ? 
-                '<br><br><small>Tip: Try switching to a different model from the dropdown above.</small>' : ''}
-        </div>`;
     } finally {
-        generateButton.disabled = false;
-        loadingDiv.style.display = 'none';
+        setInputState(true);
+        isProcessing = false;
     }
 }
 
 // Initialize the interface
 document.addEventListener('DOMContentLoaded', () => {
-    initializeUsageCounters();
-    switchMode('writing');
+    const chatInput = document.getElementById('chat-input');
+    const sendButton = document.getElementById('send');
+    
+    // Remove any existing thinking indicators on load
+    const existingThinkingIndicators = document.querySelectorAll('.thinking');
+    existingThinkingIndicators.forEach(indicator => {
+        const wrapper = indicator.closest('.message-wrapper');
+        if (wrapper) wrapper.remove();
+    });
+    
+    sendButton.addEventListener('click', (e) => {
+        e.preventDefault();
+        sendMessage();
+    });
+    
+    chatInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+    
+    chatInput.focus();
 }); 

@@ -3,311 +3,96 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Assistant</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/themes/prism-tomorrow.min.css" rel="stylesheet" />
-    <style>
-        :root {
-            --primary-color: #6366f1;
-            --primary-hover: #4f46e5;
-            --bg-color: #f8fafc;
-            --card-bg: #ffffff;
-            --text-color: #1e293b;
-            --text-secondary: #64748b;
-            --writing-color: #8b5cf6;
-            --coding-color: #ec4899;
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: var(--bg-color);
-            color: var(--text-color);
-        }
-
-        .header {
-            background-color: var(--card-bg);
-            padding: 1rem;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            z-index: 100;
-        }
-
-        .header-content {
-            max-width: 1200px;
-            margin: 0 auto;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .logo {
-            font-size: 1.5rem;
-            font-weight: 600;
-            background: linear-gradient(45deg, var(--writing-color), var(--coding-color));
-            -webkit-background-clip: text;
-            background-clip: text;
-            color: transparent;
-        }
-
-        .mode-toggle {
-            display: flex;
-            gap: 1rem;
-            background: var(--card-bg);
-            padding: 0.5rem;
-            border-radius: 0.75rem;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        .mode-button {
-            padding: 0.75rem 1.5rem;
-            border: none;
-            border-radius: 0.5rem;
-            font-size: 1rem;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            background: transparent;
-            color: var(--text-secondary);
-        }
-
-        .mode-button.active[data-mode="writing"] {
-            background: var(--writing-color);
-            color: white;
-        }
-
-        .mode-button.active[data-mode="coding"] {
-            background: var(--coding-color);
-            color: white;
-        }
-
-        .mode-button:hover:not(.active) {
-            background: rgba(0,0,0,0.05);
-        }
-
-        .model-selector {
-            position: relative;
-            min-width: 250px;
-        }
-
-        select {
-            width: 100%;
-            padding: 0.75rem;
-            border: 1px solid #e2e8f0;
-            border-radius: 0.5rem;
-            background-color: var(--card-bg);
-            color: var(--text-color);
-            font-size: 0.9rem;
-            cursor: pointer;
-            appearance: none;
-            padding-right: 2rem;
-        }
-
-        .model-selector::after {
-            content: '▼';
-            position: absolute;
-            right: 0.75rem;
-            top: 50%;
-            transform: translateY(-50%);
-            color: var(--text-secondary);
-            pointer-events: none;
-            font-size: 0.8rem;
-        }
-
-        .container {
-            max-width: 800px;
-            margin: 6rem auto 2rem;
-            padding: 2rem;
-        }
-
-        .input-section {
-            background-color: var(--card-bg);
-            padding: 2rem;
-            border-radius: 1rem;
-            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
-        }
-
-        .coding-options {
-            display: none;
-            margin-bottom: 1rem;
-        }
-
-        .coding-options.visible {
-            display: block;
-        }
-
-        .language-select {
-            width: 100%;
-            padding: 0.75rem;
-            border: 1px solid #e2e8f0;
-            border-radius: 0.5rem;
-            margin-bottom: 1rem;
-            font-size: 0.9rem;
-        }
-
-        textarea {
-            width: 100%;
-            min-height: 150px;
-            padding: 1rem;
-            border: 1px solid #e2e8f0;
-            border-radius: 0.5rem;
-            font-size: 1rem;
-            margin: 1rem 0;
-            resize: vertical;
-            box-sizing: border-box;
-        }
-
-        button {
-            background: linear-gradient(45deg, var(--writing-color), var(--coding-color));
-            color: white;
-            padding: 1rem 2rem;
-            border: none;
-            border-radius: 0.5rem;
-            font-size: 1rem;
-            cursor: pointer;
-            width: 100%;
-            transition: transform 0.3s;
-        }
-
-        button:hover {
-            transform: translateY(-2px);
-        }
-
-        button:disabled {
-            background: var(--text-secondary);
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        #modelDescription {
-            margin-top: 0.5rem;
-            font-size: 0.8rem;
-            color: var(--text-secondary);
-        }
-
-        .loading {
-            text-align: center;
-            color: var(--text-secondary);
-            margin: 1rem 0;
-            display: none;
-        }
-
-        #result {
-            margin-top: 2rem;
-            line-height: 1.6;
-            white-space: pre-wrap;
-        }
-
-        .error {
-            color: #dc2626;
-            background-color: #fef2f2;
-            padding: 1rem;
-            border-radius: 0.5rem;
-            margin-top: 1rem;
-        }
-
-        .usage-info {
-            margin-top: 1rem;
-            padding: 0.5rem;
-            background-color: #f8fafc;
-            border-radius: 0.5rem;
-            font-size: 0.9rem;
-            color: var(--text-secondary);
-        }
-
-        pre {
-            margin: 0;
-            padding: 0;
-        }
-
-        code {
-            background: #1e1e1e !important;
-            color: #d4d4d4;
-            padding: 1rem !important;
-            border-radius: 0.5rem;
-            display: block;
-            overflow-x: auto;
-            font-family: 'Fira Code', Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
-            font-size: 0.9rem;
-            line-height: 1.5;
-            tab-size: 4;
-        }
-
-        .code-block {
-            margin: 1rem 0;
-            background: #1e1e1e;
-            border-radius: 0.5rem;
-            overflow: hidden;
-        }
-
-        .code-header {
-            background: #2d2d2d;
-            color: #d4d4d4;
-            padding: 0.5rem 1rem;
-            font-size: 0.9rem;
-            font-family: 'Segoe UI', sans-serif;
-            border-bottom: 1px solid #3d3d3d;
-        }
-
-        .result-section {
-            margin-top: 2rem;
-            font-size: 1rem;
-            line-height: 1.6;
-        }
-
-        .explanation {
-            margin: 1rem 0;
-            color: var(--text-color);
-            line-height: 1.6;
-        }
-    </style>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Cleverbot</title>
+    <link rel="stylesheet" href="src/css/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <header class="header">
-        <div class="header-content">
-            <div class="mode-toggle">
-                <button class="mode-button active" data-mode="writing" onclick="switchMode('writing')">Writing</button>
-                <button class="mode-button" data-mode="coding" onclick="switchMode('coding')">Coding</button>
-            </div>
-            <div class="model-selector">
-                <select id="model" onchange="updateModelDescription()">
-                    <!-- Models will be populated by JavaScript -->
-                </select>
-                <div id="modelDescription"></div>
+    <header class="header" role="banner">
+        <div class="logo" role="heading" aria-level="1">Cleverbot</div>
+        <div class="theme-switcher">
+            <button class="theme-toggle" aria-label="Toggle theme menu">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <circle cx="12" cy="12" r="5"></circle>
+                    <line x1="12" y1="1" x2="12" y2="3"></line>
+                    <line x1="12" y1="21" x2="12" y2="23"></line>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                    <line x1="1" y1="12" x2="3" y2="12"></line>
+                    <line x1="21" y1="12" x2="23" y2="12"></line>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                </svg>
+            </button>
+            <div class="theme-options" role="menu" aria-label="Theme options">
+                <button class="theme-option" data-theme="light" role="menuitem">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <circle cx="12" cy="12" r="5"></circle>
+                    </svg>
+                    Light
+                </button>
+                <button class="theme-option" data-theme="dark" role="menuitem">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    Dark
+                </button>
+                <button class="theme-option" data-theme="system" role="menuitem">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                    </svg>
+                    System
+                </button>
             </div>
         </div>
     </header>
 
-    <div class="container">
-        <div class="input-section">
-            <div id="coding-options" class="coding-options">
-                <select id="language" class="language-select">
-                    <option value="python">Python</option>
-                    <option value="javascript">JavaScript</option>
-                    <option value="java">Java</option>
-                    <option value="cpp">C++</option>
-                    <option value="csharp">C#</option>
-                    <option value="php">PHP</option>
-                    <option value="ruby">Ruby</option>
-                    <option value="swift">Swift</option>
-                    <option value="go">Go</option>
-                </select>
-            </div>
-            <textarea id="topic" placeholder="Enter your topic here..."></textarea>
-            <button id="generate" onclick="generateContent()">Generate</button>
-            <div id="loading" class="loading">Processing your request... Please wait...</div>
-            <div id="result"></div>
+    <main role="main">
+        <div id="chat-display" role="log" aria-label="Chat messages">
+            <div class="message-container" role="list"></div>
         </div>
-    </div>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/prism.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-python.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-javascript.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-java.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-cpp.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-csharp.min.js"></script>
-    <script src="script.js"></script>
+
+        <div class="input-section" role="form" aria-label="Message input">
+            <div class="input-group">
+                <input 
+                    type="text" 
+                    id="chat-input" 
+                    placeholder="Ask me anything..." 
+                    autofocus
+                    aria-label="Type your message"
+                >
+                <button id="send" aria-label="Send message">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                    <span>Send</span>
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <template id="model-info-template">
+        <div class="model-info">
+            <div class="model-name" role="status"></div>
+        </div>
+    </template>
+
+    <template id="thinking-template">
+        <div class="thinking" role="status" aria-live="polite">
+            <span>Thinking</span>
+            <div class="dots">
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+            </div>
+        </div>
+    </template>
+
+    <script src="src/js/theme.js" type="module"></script>
+    <script src="src/js/app.js" type="module"></script>
 </body>
 </html> 
