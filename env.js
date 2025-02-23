@@ -1,0 +1,3 @@
+window.ENV = {
+    OPENROUTER_API_KEY: '{{OPENROUTER_API_KEY}}'
+}; 

@@ -1,19 +1,17 @@
 // API Configuration
 export const API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
-// Load API key from environment variable or meta tag
+// Load API key from environment variable
 const getApiKey = () => {
-    // Try to get from meta tag first (for production)
-    const metaKey = document.querySelector('meta[name="api-key"]')?.content;
-    if (metaKey) return metaKey;
-
-    // For local development
-    if (process.env.OPENROUTER_API_KEY) {
-        return process.env.OPENROUTER_API_KEY;
+    // For Netlify production environment
+    if (window.ENV && window.ENV.OPENROUTER_API_KEY) {
+        return window.ENV.OPENROUTER_API_KEY;
     }
-
-    console.warn('API key not found in environment or meta tag');
-    return null;
+    
+    // For local development
+    const localKey = 'REDACTED_OPENROUTER_KEY';
+    console.warn('Using local development API key');
+    return localKey;
 };
 
 export const API_KEY = getApiKey();
