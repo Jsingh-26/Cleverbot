@@ -1,4 +1,5 @@
-import { marked } from 'https://cdn.jsdelivr.net/npm/marked/lib/marked.esm.js';
+// Use the global marked instance
+const { marked } = window;
 import 'https://cdn.jsdelivr.net/npm/highlight.js@11.8.0/lib/languages/javascript.min.js';
 
 // Configure marked options
