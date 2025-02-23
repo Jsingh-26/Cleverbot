@@ -27,10 +27,10 @@ if (!apiKey) {
 
 export const API_KEY = apiKey;
 
-// Model Configuration - Only the best 4 models
+// Model Configuration - Models with '-free' suffix
 export const MODELS = [
-    'google/gemini-pro-1.5-exp',      // Latest Gemini model, very capable
-    'meta-llama/llama-3.1-70b-instruct-free',  // Large Llama model, excellent performance
-    'mistral/mistral-7b-instruct-free',  // Efficient and reliable
-    'google/gemma-2-9b-it-free'  // New Google model, good balance of size and capability
+    'meta-llama/llama-2-70b-chat-free',     // Most capable free Llama model
+    'mistral/mistral-7b-instruct-free',     // Efficient and reliable
+    'phind/phind-codellama-34b-free',       // Great for code and general tasks
+    'nousresearch/nous-hermes-2-vision-free' // Vision capable model
 ]; 
