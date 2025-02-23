@@ -1,6 +1,5 @@
-// Use the global marked instance
-const { marked } = window;
-import 'https://cdn.jsdelivr.net/npm/highlight.js@11.8.0/lib/languages/javascript.min.js';
+// Use the global instances
+const { marked, hljs } = window;
 
 // Configure marked options
 marked.setOptions({
