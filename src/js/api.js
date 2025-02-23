@@ -73,10 +73,18 @@ export const api = new API();
 // Utility function to handle API errors
 const handleApiError = (error, modelIndex) => {
     const errorMessage = error.message || 'An unknown error occurred';
-    console.error(`Error with model ${MODELS[modelIndex]}:`, errorMessage);
+    const modelId = MODELS[modelIndex];
+    console.error(`Error with model ${modelId}:`, {
+        error: errorMessage,
+        modelIndex,
+        modelId,
+        status: error.status,
+        statusText: error.statusText
+    });
     return {
         success: false,
-        error: errorMessage
+        error: errorMessage,
+        modelId
     };
 };
 
@@ -87,11 +95,18 @@ export const makeApiRequest = async (message, modelIndex, maxRetries = 3) => {
         return handleApiError(new Error('API key is not configured'), modelIndex);
     }
 
+    const modelId = MODELS[modelIndex];
+    console.log(`Starting request for model ${modelId}`, {
+        modelIndex,
+        messageLength: message.length,
+        retryLimit: maxRetries
+    });
+
     let retries = 0;
     
     while (retries < maxRetries) {
         try {
-            console.log(`Attempting request with model: ${MODELS[modelIndex]}`);
+            console.log(`Attempt ${retries + 1} for model ${modelId}`);
             
             const response = await fetch(API_URL, {
                 method: 'POST',
@@ -102,7 +117,7 @@ export const makeApiRequest = async (message, modelIndex, maxRetries = 3) => {
                     'X-Title': 'Cleverbot'
                 },
                 body: JSON.stringify({
-                    model: MODELS[modelIndex],
+                    model: modelId,
                     messages: [
                         { role: 'user', content: message }
                     ],
@@ -112,22 +127,34 @@ export const makeApiRequest = async (message, modelIndex, maxRetries = 3) => {
 
             if (!response.ok) {
                 const errorData = await response.json();
+                console.error(`HTTP error for model ${modelId}:`, {
+                    status: response.status,
+                    statusText: response.statusText,
+                    errorData
+                });
                 throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`);
             }
 
-            console.log(`Successful response from model: ${MODELS[modelIndex]}`);
+            console.log(`Successful response from model ${modelId}`);
             return {
                 success: true,
-                response
+                response,
+                modelId
             };
         } catch (error) {
-            console.error(`Attempt ${retries + 1} failed for model ${MODELS[modelIndex]}:`, error.message);
+            console.error(`Attempt ${retries + 1} failed for model ${modelId}:`, {
+                error: error.message,
+                attempt: retries + 1,
+                maxRetries
+            });
             retries++;
             if (retries === maxRetries) {
                 return handleApiError(error, modelIndex);
             }
             // Wait before retrying (exponential backoff)
-            await new Promise(resolve => setTimeout(resolve, Math.pow(2, retries) * 1000));
+            const delay = Math.pow(2, retries) * 1000;
+            console.log(`Waiting ${delay}ms before retry...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
         }
     }
 };
@@ -137,10 +164,18 @@ export const processStream = async (response, onChunk) => {
     try {
         const reader = response.body.getReader();
         const textDecoder = new TextDecoder();
+        let accumulatedText = '';
+
+        console.log('Starting to process stream');
 
         while (true) {
             const { done, value } = await reader.read();
-            if (done) break;
+            if (done) {
+                console.log('Stream completed', {
+                    totalLength: accumulatedText.length
+                });
+                break;
+            }
 
             const chunk = textDecoder.decode(value);
             const lines = chunk.split('\n');
@@ -150,12 +185,17 @@ export const processStream = async (response, onChunk) => {
                     try {
                         const data = JSON.parse(line.substring(6));
                         if (data.choices && data.choices[0].delta?.content) {
-                            onChunk(data.choices[0].delta.content);
+                            const content = data.choices[0].delta.content;
+                            accumulatedText += content;
+                            onChunk(content);
                         }
                     } catch (e) {
-                        console.error('Error parsing stream chunk:', e);
+                        console.error('Error parsing stream chunk:', {
+                            error: e.message,
+                            line: line.substring(0, 50) + '...' // Only log first 50 chars
+                        });
                         if (line.includes('[DONE]')) {
-                            console.log('Stream completed');
+                            console.log('Stream completed with [DONE] signal');
                             return;
                         }
                     }
@@ -163,7 +203,10 @@ export const processStream = async (response, onChunk) => {
             }
         }
     } catch (error) {
-        console.error('Error processing stream:', error);
+        console.error('Error processing stream:', {
+            error: error.message,
+            stack: error.stack
+        });
         throw error;
     }
 }; 
