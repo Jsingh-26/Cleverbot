@@ -1,97 +1,130 @@
-import { chatState } from './chatState.js';
+import { MODELS } from './config.js';
+import { makeApiRequest, processStream } from './api.js';
 import { ui } from './ui.js';
-import { api } from './api.js';
 
-class ChatApp {
-    constructor() {
-        this.setupEventListeners();
-        this.setupStateObservers();
-    }
+// State management
+let isProcessing = false;
+let lastUserMessage = '';
+let currentModelIndex = 0;
 
-    setupEventListeners() {
-        // Send button click
-        ui.sendButton.addEventListener('click', (e) => {
-            e.preventDefault();
-            this.handleSendMessage();
-        });
+// Message history management
+const messageHistory = [];
+const saveMessage = (message, type) => {
+    messageHistory.push({ 
+        message, 
+        type, 
+        timestamp: Date.now() 
+    });
+};
 
-        // Enter key press
-        ui.chatInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                this.handleSendMessage();
-            }
-        });
-
-        // Input validation
-        ui.chatInput.addEventListener('input', () => {
-            ui.updateSendButtonState();
-        });
-    }
-
-    setupStateObservers() {
-        chatState.addObserver((state) => {
-            ui.setInputState(!state.isProcessing);
-        });
-    }
-
-    async handleSendMessage() {
-        const message = ui.getInputValue();
-        if (!message || chatState.isProcessing) return;
-
-        // Update state and UI
-        chatState.setProcessing(true);
-        chatState.setLastUserMessage(message);
-        ui.clearInput();
-
-        // Display user message
-        ui.appendMessage(message, 'user');
+// Main message handling function
+async function sendMessage(message = null, startFromModel = 0) {
+    if (isProcessing) return;
+    
+    const userMessage = message || ui.getInputValue();
+    
+    if (!userMessage) return;
+    
+    isProcessing = true;
+    lastUserMessage = userMessage;
+    currentModelIndex = startFromModel;
+    
+    let thinkingIndicator = null;
+    
+    try {
+        ui.setInputState(false);
         
-        // Show thinking indicator
-        const thinking = ui.appendThinkingIndicator();
-
-        try {
-            const response = await this.sendMessageWithFallback(message);
-            
-            // Remove thinking indicator
-            thinking.remove();
-
-            if (response.success) {
-                ui.appendMessage(response.message, 'bot', response.modelId);
-            } else {
-                throw response.error;
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            thinking.remove();
-            ui.appendMessage(`Error: ${error.message}`, 'bot');
-        } finally {
-            chatState.setProcessing(false);
-            ui.focusInput();
+        if (!message) {
+            ui.appendMessage(userMessage, 'user');
+            saveMessage(userMessage, 'user');
+            ui.clearInput();
         }
-    }
-
-    async sendMessageWithFallback(message) {
-        let response;
-        let currentModel = chatState.getCurrentModel();
-
-        do {
-            response = await api.sendMessage(message, currentModel);
+        
+        thinkingIndicator = ui.appendThinkingIndicator();
+        let responseReceived = false;
+        
+        for (let i = startFromModel; i < MODELS.length; i++) {
+            currentModelIndex = i;
+            console.log(`Trying model: ${MODELS[i]}`);
             
-            if (!response.success && chatState.hasNextModel()) {
-                chatState.moveToNextModel();
-                currentModel = chatState.getCurrentModel();
-            } else {
-                break;
+            const { success, response, error } = await makeApiRequest(userMessage, i);
+            
+            if (!success) {
+                console.error(`Error with model ${MODELS[i]}:`, error);
+                if (i === MODELS.length - 1) {
+                    if (thinkingIndicator) {
+                        thinkingIndicator.remove();
+                        thinkingIndicator = null;
+                    }
+                    ui.appendMessage('Error: Unable to get response from any available model. Please try again later.', 'error');
+                }
+                continue;
             }
-        } while (true);
-
-        return response;
+            
+            try {
+                if (thinkingIndicator) {
+                    thinkingIndicator.remove();
+                    thinkingIndicator = null;
+                }
+                
+                const botMessageElement = ui.appendMessage('', 'bot', MODELS[i]);
+                responseReceived = false;
+                
+                await processStream(response, (content) => {
+                    responseReceived = true;
+                    if (botMessageElement.querySelector('.message')) {
+                        botMessageElement.querySelector('.message').textContent += content;
+                    }
+                    ui.scrollToBottom();
+                });
+                
+                if (!responseReceived) {
+                    throw new Error('No content received from stream');
+                }
+                
+                saveMessage(botMessageElement.querySelector('.message').textContent, 'bot');
+                break;
+            } catch (streamError) {
+                console.error('Error processing stream:', streamError);
+                if (i === MODELS.length - 1) {
+                    ui.appendMessage('Error: Failed to process the response. Please try again.', 'error');
+                }
+                continue;
+            }
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        if (thinkingIndicator) {
+            thinkingIndicator.remove();
+        }
+        ui.appendMessage('An unexpected error occurred. Please try again.', 'error');
+    } finally {
+        isProcessing = false;
+        ui.setInputState(true);
+        if (thinkingIndicator) {
+            thinkingIndicator.remove();
+        }
     }
 }
 
-// Initialize the application when DOM is loaded
+// Event listeners
 document.addEventListener('DOMContentLoaded', () => {
-    new ChatApp();
-    ui.focusInput();
-}); 
+    // Input event for enabling/disabling send button
+    ui.chatInput.addEventListener('input', () => {
+        ui.updateSendButtonState();
+    });
+    
+    // Enter key press
+    ui.chatInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+    
+    // Send button click
+    ui.sendButton.addEventListener('click', () => sendMessage());
+});
+
+// Export functions for external use
+export { sendMessage, messageHistory }; 
