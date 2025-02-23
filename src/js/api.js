@@ -7,23 +7,62 @@ export class API {
         this.API_KEY = API_KEY;
     }
 
+    // Helper to create consistent headers
+    getHeaders() {
+        if (!this.API_KEY) {
+            console.error('API key is not available');
+            throw new Error('API key is required');
+        }
+
+        // Validate API key format
+        if (this.API_KEY === '{{OPENROUTER_API_KEY}}' || !this.API_KEY.startsWith('sk-or-')) {
+            console.error('Invalid API key format');
+            throw new Error('Invalid API key format');
+        }
+
+        const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.API_KEY}`,
+            'HTTP-Referer': window.location.origin || 'http://localhost:3000'
+        };
+
+        // Log headers for debugging (with masked API key)
+        const maskedKey = this.API_KEY.substring(0, 6) + '...' + this.API_KEY.substring(this.API_KEY.length - 4);
+        console.log('Using API key:', maskedKey);
+        console.log('Generated headers:', {
+            ...headers,
+            'Authorization': 'Bearer [MASKED]'
+        });
+
+        return headers;
+    }
+
     // Main API call method
     async sendMessage(message, modelId) {
         try {
+            const headers = this.getHeaders();
+            const body = {
+                model: modelId,
+                messages: [
+                    { role: 'user', content: message }
+                ],
+                temperature: 0.7
+            };
+
+            console.log('Sending request:', {
+                url: this.API_URL,
+                model: modelId,
+                headers: {
+                    ...headers,
+                    'Authorization': 'Bearer [MASKED]'
+                },
+                body
+            });
+
             const response = await fetch(this.API_URL, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.API_KEY}`,
-                    'HTTP-Referer': window.location.href,
-                    'X-Title': 'Cleverbot'
-                },
-                body: JSON.stringify({
-                    model: modelId,
-                    messages: [
-                        { role: 'user', content: message }
-                    ]
-                })
+                headers,
+                body: JSON.stringify(body)
             });
 
             if (!response.ok) {
@@ -50,6 +89,7 @@ export class API {
         const error = new Error(errorData.error?.message || 'Failed to get response from the model');
         error.status = response.status;
         error.statusText = response.statusText;
+        error.details = errorData;
         return error;
     }
 
@@ -58,7 +98,7 @@ export class API {
             return new Error('Rate limit exceeded. Please try again later.');
         }
         if (error.status === 401) {
-            return new Error('Invalid API key. Please check your configuration.');
+            return new Error('Invalid API key or authentication failed. Please check your configuration.');
         }
         if (error.status === 404) {
             return new Error('Selected model is currently unavailable.');
@@ -79,7 +119,8 @@ const handleApiError = (error, modelIndex) => {
         modelIndex,
         modelId,
         status: error.status,
-        statusText: error.statusText
+        statusText: error.statusText,
+        details: error.details
     });
     return {
         success: false,
@@ -108,31 +149,43 @@ export const makeApiRequest = async (message, modelIndex, maxRetries = 3) => {
         try {
             console.log(`Attempt ${retries + 1} for model ${modelId}`);
             
+            const headers = api.getHeaders();
+
+            // Log request details for debugging
+            console.log('Request details:', {
+                url: API_URL,
+                model: modelId,
+                headers: {
+                    ...headers,
+                    'Authorization': 'Bearer [MASKED]'
+                }
+            });
+            
             const response = await fetch(API_URL, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${API_KEY}`,
-                    'HTTP-Referer': window.location.origin,
-                    'X-Title': 'Cleverbot'
-                },
+                headers,
                 body: JSON.stringify({
                     model: modelId,
                     messages: [
                         { role: 'user', content: message }
                     ],
-                    stream: true,
+                    temperature: 0.7,
+                    stream: true
                 })
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
-                console.error(`HTTP error for model ${modelId}:`, {
+                const errorData = await response.json().catch(() => ({}));
+                const error = errorData.error || errorData;
+                console.error(`API Error Details:`, {
                     status: response.status,
                     statusText: response.statusText,
-                    errorData
+                    error: error,
+                    model: modelId,
+                    responseHeaders: Object.fromEntries(response.headers.entries()),
+                    requestHeaders: headers
                 });
-                throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`);
+                throw new Error(error?.message || `HTTP error! status: ${response.status}`);
             }
 
             console.log(`Successful response from model ${modelId}`);

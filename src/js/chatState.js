@@ -1,3 +1,5 @@
+import { MODELS, formatModelName } from './config.js';
+
 // Chat state management module
 export class ChatState {
     constructor() {
@@ -5,73 +7,15 @@ export class ChatState {
         this.lastUserMessage = '';
         this.currentModelIndex = 0;
         this.observers = new Set();
-        
-        this.MODELS = [
-            'google/gemini-pro',
-            'meta-llama/llama-2-70b-chat',
-            'anthropic/claude-3-opus',
-            'anthropic/claude-3-sonnet',
-            'anthropic/claude-3-haiku',
-            'meta-llama/llama-2-13b-chat',
-            'gryphe/mythomist-7b',
-            'nousresearch/nous-capybara-7b',
-            'openchat/openchat-7b',
-            'mistralai/mistral-7b-instruct',
-            'rwkv/rwkv-5-world-3b',
-            'google/gemini-1.5-pro',
-            'anthropic/claude-2.1',
-            'anthropic/claude-2.0',
-            'anthropic/claude-instant-1.2',
-            'meta-llama/codellama-34b-instruct',
-            'meta-llama/llama-2-13b-chat',
-            'google/palm-2-chat-bison',
-            'google/palm-2-codechat-bison',
-            'meta-llama/llama-2-7b-chat',
-            'phind/phind-codellama-34b',
-            'nousresearch/nous-hermes-2-mixtral-8x7b-dpo',
-            'deepseek-ai/deepseek-coder-33b-instruct',
-            'perplexity/pplx-70b-chat',
-            'perplexity/pplx-7b-chat',
-            'jondurbin/airoboros-l2-70b'
-        ];
-    }
-
-    // State management methods
-    setProcessing(isProcessing) {
-        this.isProcessing = isProcessing;
-        this.notifyObservers();
-    }
-
-    setLastUserMessage(message) {
-        this.lastUserMessage = message;
-        this.notifyObservers();
-    }
-
-    setCurrentModelIndex(index) {
-        this.currentModelIndex = index;
-        this.notifyObservers();
-    }
-
-    getCurrentModel() {
-        return this.MODELS[this.currentModelIndex];
-    }
-
-    // Observer pattern methods
-    addObserver(observer) {
-        this.observers.add(observer);
-    }
-
-    removeObserver(observer) {
-        this.observers.delete(observer);
-    }
-
-    notifyObservers() {
-        this.observers.forEach(observer => observer(this));
     }
 
     // Model management methods
+    getCurrentModel() {
+        return MODELS[this.currentModelIndex];
+    }
+
     hasNextModel() {
-        return this.currentModelIndex < this.MODELS.length - 1;
+        return this.currentModelIndex < MODELS.length - 1;
     }
 
     moveToNextModel() {
@@ -82,13 +26,38 @@ export class ChatState {
         return false;
     }
 
-    resetModelIndex() {
-        this.setCurrentModelIndex(0);
+    setCurrentModelIndex(index) {
+        if (index >= 0 && index < MODELS.length) {
+            this.currentModelIndex = index;
+            this.notifyObservers();
+            return true;
+        }
+        return false;
     }
 
-    formatModelName(modelId) {
-        const [provider, model] = modelId.split('/');
-        return `${provider.charAt(0).toUpperCase() + provider.slice(1)} - ${model}`;
+    // Observer pattern implementation
+    addObserver(observer) {
+        this.observers.add(observer);
+    }
+
+    removeObserver(observer) {
+        this.observers.delete(observer);
+    }
+
+    notifyObservers() {
+        this.observers.forEach(observer => observer(this.getState()));
+    }
+
+    // State management
+    getState() {
+        return {
+            isProcessing: this.isProcessing,
+            lastUserMessage: this.lastUserMessage,
+            currentModelIndex: this.currentModelIndex,
+            currentModel: this.getCurrentModel(),
+            hasNextModel: this.hasNextModel(),
+            modelName: formatModelName(this.getCurrentModel())
+        };
     }
 }
 
