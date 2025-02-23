@@ -10,6 +10,10 @@
 [build.environment]
   NODE_VERSION = "18"
 
+[context.production.environment]
+  NODE_ENV = "production"
+  SECRETS_SCAN_ENABLED = "false"
+
 [[headers]]
   for = "/*"
   [headers.values]
