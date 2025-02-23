@@ -15,23 +15,22 @@ export class UI {
     // Message creation methods
     createMessageWrapper(type) {
         const wrapper = document.createElement('div');
-        wrapper.className = `message-wrapper ${type}`;
-        wrapper.setAttribute('role', 'listitem');
-
+        wrapper.className = `message-wrapper ${type}-message`;
+        
         const content = document.createElement('div');
         content.className = 'message-content';
-
+        
         const avatar = document.createElement('div');
-        avatar.className = 'avatar';
-        avatar.textContent = type === 'user' ? 'U' : 'B';
-
+        avatar.className = `avatar ${type}-avatar`;
+        avatar.textContent = type === 'user' ? 'U' : 'C';
+        
         const message = document.createElement('div');
         message.className = 'message';
-
+        
         content.appendChild(avatar);
         content.appendChild(message);
         wrapper.appendChild(content);
-
+        
         return { wrapper, message };
     }
 
@@ -107,7 +106,10 @@ export class UI {
 
     formatModelName(modelId) {
         const [provider, model] = modelId.split('/');
-        return `${provider.charAt(0).toUpperCase() + provider.slice(1)} - ${model}`;
+        const formattedModel = model.split('-').map(word => 
+            word.charAt(0).toUpperCase() + word.slice(1)
+        ).join(' ');
+        return `${provider.charAt(0).toUpperCase() + provider.slice(1)} - ${formattedModel}`;
     }
 }
 

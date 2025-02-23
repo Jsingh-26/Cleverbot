@@ -1,8 +1,10 @@
+import { API_URL, API_KEY, MODELS } from './config.js';
+
 // API module for OpenRouter
 export class API {
     constructor() {
-        this.API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-        this.API_KEY = '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';
+        this.API_URL = API_URL;
+        this.API_KEY = API_KEY;
     }
 
     // Main API call method
@@ -66,4 +68,100 @@ export class API {
 }
 
 // Export a singleton instance
-export const api = new API(); 
+export const api = new API();
+
+// Utility function to handle API errors
+const handleApiError = (error, modelIndex) => {
+    console.error(`Error with model ${MODELS[modelIndex]}:`, error);
+    return {
+        success: false,
+        error: error.message || 'An unknown error occurred'
+    };
+};
+
+// Function to make API requests with retries
+export const makeApiRequest = async (message, modelIndex, maxRetries = 3) => {
+    if (!API_KEY) {
+        return handleApiError(new Error('API key is not configured'), modelIndex);
+    }
+
+    let retries = 0;
+    
+    while (retries < maxRetries) {
+        try {
+            console.log(`Attempting request with model: ${MODELS[modelIndex]}`);
+            
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${API_KEY}`,
+                    'HTTP-Referer': window.location.origin,
+                    'X-Title': 'Cleverbot'
+                },
+                body: JSON.stringify({
+                    model: MODELS[modelIndex],
+                    messages: [
+                        { role: 'user', content: message }
+                    ],
+                    stream: true,
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`);
+            }
+
+            console.log(`Successful response from model: ${MODELS[modelIndex]}`);
+            return {
+                success: true,
+                response
+            };
+        } catch (error) {
+            console.error(`Attempt ${retries + 1} failed for model ${MODELS[modelIndex]}:`, error);
+            retries++;
+            if (retries === maxRetries) {
+                return handleApiError(error, modelIndex);
+            }
+            // Wait before retrying (exponential backoff)
+            await new Promise(resolve => setTimeout(resolve, Math.pow(2, retries) * 1000));
+        }
+    }
+};
+
+// Function to process streaming response
+export const processStream = async (response, onChunk) => {
+    try {
+        const reader = response.body.getReader();
+        const textDecoder = new TextDecoder();
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = textDecoder.decode(value);
+            const lines = chunk.split('\n');
+            
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(line.substring(6));
+                        if (data.choices && data.choices[0].delta?.content) {
+                            onChunk(data.choices[0].delta.content);
+                        }
+                    } catch (e) {
+                        console.error('Error parsing stream chunk:', e);
+                        if (line.includes('[DONE]')) {
+                            console.log('Stream completed');
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error processing stream:', error);
+        throw error;
+    }
+}; 
