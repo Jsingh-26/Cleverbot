@@ -72,16 +72,18 @@ export const api = new API();
 
 // Utility function to handle API errors
 const handleApiError = (error, modelIndex) => {
-    console.error(`Error with model ${MODELS[modelIndex]}:`, error);
+    const errorMessage = error.message || 'An unknown error occurred';
+    console.error(`Error with model ${MODELS[modelIndex]}:`, errorMessage);
     return {
         success: false,
-        error: error.message || 'An unknown error occurred'
+        error: errorMessage
     };
 };
 
 // Function to make API requests with retries
 export const makeApiRequest = async (message, modelIndex, maxRetries = 3) => {
     if (!API_KEY) {
+        console.error('API key is not configured. Check your environment variables.');
         return handleApiError(new Error('API key is not configured'), modelIndex);
     }
 
@@ -119,7 +121,7 @@ export const makeApiRequest = async (message, modelIndex, maxRetries = 3) => {
                 response
             };
         } catch (error) {
-            console.error(`Attempt ${retries + 1} failed for model ${MODELS[modelIndex]}:`, error);
+            console.error(`Attempt ${retries + 1} failed for model ${MODELS[modelIndex]}:`, error.message);
             retries++;
             if (retries === maxRetries) {
                 return handleApiError(error, modelIndex);
