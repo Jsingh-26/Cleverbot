@@ -14,7 +14,14 @@
     
     <!-- Environment and Scripts -->
     <script src="env.js"></script>
+    <!-- Highlight.js with common languages -->
     <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.8.0/lib/highlight.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.8.0/lib/languages/javascript.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.8.0/lib/languages/python.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.8.0/lib/languages/bash.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.8.0/lib/languages/json.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.8.0/lib/languages/markdown.min.js"></script>
+    <!-- Marked for markdown parsing -->
     <script src="https://cdn.jsdelivr.net/npm/marked/lib/marked.umd.js"></script>
     
     <!-- Load our modules -->
@@ -29,6 +36,12 @@
         window.api = api;
         window.ui = ui;
         window.sendMessage = sendMessage;
+
+        // Initialize highlight.js
+        hljs.configure({
+            ignoreUnescapedHTML: true,
+            languages: ['javascript', 'python', 'bash', 'json', 'markdown']
+        });
     </script>
 </head>
 <body>
