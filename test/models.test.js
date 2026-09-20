@@ -20,24 +20,33 @@ describe('models function', () => {
     });
 
     it('returns only live models, preserving curated preference order', async () => {
-        // Pretend only these two are live: flash (preferred) and zephyr
+        // Pretend only these two are live: gemma (preferred) and lfm
         globalThis.fetch = async () => new Response(openrouterPayload([
-            'huggingfaceh4/zephyr-7b-beta:free',
-            'google/gemini-2.0-flash-exp:free'
+            'liquid/lfm-2.5-2.6b:free',
+            'google/gemma-4-31b-it:free'
         ]), { status: 200 });
 
         const response = await handler(get());
         assert.equal(response.status, 200);
         const body = await response.json();
         assert.deepEqual(body.models.map((m) => m.id), [
-            'google/gemini-2.0-flash-exp:free',
-            'huggingfaceh4/zephyr-7b-beta:free'
+            'google/gemma-4-31b-it:free',
+            'liquid/lfm-2.5-2.6b:free'
         ]);
         assert.equal(body.models[0].contextLength, 4096);
     });
 
-    it('returns an empty list when no supported model is live', async () => {
+    it('falls back to live :free models when curated ids are offline', async () => {
         globalThis.fetch = async () => new Response(openrouterPayload(['some/other-model:free']), { status: 200 });
+
+        const response = await handler(get());
+        const body = await response.json();
+        assert.equal(body.models.length, 1);
+        assert.equal(body.models[0].id, 'some/other-model:free');
+    });
+
+    it('returns an empty list when no free models are live', async () => {
+        globalThis.fetch = async () => new Response(openrouterPayload(['paid/model-only']), { status: 200 });
 
         const response = await handler(get());
         const body = await response.json();
