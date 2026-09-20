@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "870283379423",
+    "project_id": "cleverbot-android",
+    "storage_bucket": "cleverbot-android.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:870283379423:android:cb69ef0ec50404d7ce9f6a",
+        "android_client_info": {
+          "package_name": "com.jsingh26.cleverbot"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDSMgW2GMw39xE2YZtAjfV8Pqy5IxsZwcU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
