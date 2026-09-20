@@ -16,7 +16,6 @@ import {
   internalActionGeneric,
   internalMutationGeneric,
   internalQueryGeneric,
-  componentsGeneric,
 } from "convex/server";
 
 /**
@@ -89,11 +88,14 @@ export const internalAction = internalActionGeneric;
  *
  * @param func - The function. It receives an {@link ActionCtx} as its first argument
  * and a Fetch API `Request` object as its second.
- * @returns The wrapped endpoint function. Route a URL path to this function in `convex/http.js`.
+ * @returns The wrapped function. Import this function from `convex/http.js` and route it to hook it up.
  */
 export const httpAction = httpActionGeneric;
 
 /**
- * A set of {@link FunctionReference}s used for interacting with Convex components.
+ * Typesafe environment variables.
+ *
+ * This includes platform-provided env vars and any variables declared in
+ * `convex.config.ts`.
  */
-export const components = componentsGeneric();
+export const env = process.env;
