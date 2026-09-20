@@ -31,6 +31,22 @@ describe('client api module', () => {
         assert.equal(result.modelId, getModels()[0]);
     });
 
+    it('sends model auto when auto routing is requested', async () => {
+        let body;
+        globalThis.fetch = async (_url, options) => {
+            body = JSON.parse(options.body);
+            return new Response('ok', {
+                status: 200,
+                headers: { 'X-Model-Id': 'picked/model:free' }
+            });
+        };
+
+        const result = await makeApiRequest(messages, 0, { auto: true });
+        assert.equal(result.success, true);
+        assert.equal(body.model, 'auto');
+        assert.equal(result.modelId, 'picked/model:free');
+    });
+
     it('fails immediately on non-retryable 4xx (no retries)', async () => {
         let calls = 0;
         globalThis.fetch = async () => {
@@ -88,7 +104,7 @@ describe('fetchRankedModels', () => {
         assert.deepEqual(ranked.map((m) => m.id), ['a/x:free', 'b/y:free']);
     });
 
-    it('passes images=1 when requested', async () => {
+    it('passes images=1 when hasImages is set without an explicit task', async () => {
         globalThis.fetch = async (url) => {
             assert.match(String(url), /images=1/);
             return new Response(JSON.stringify({
@@ -97,6 +113,17 @@ describe('fetchRankedModels', () => {
         };
         const ranked = await fetchRankedModels({ hasImages: true });
         assert.equal(ranked[0].id, 'vision/x:free');
+    });
+
+    it('passes task=code when requested', async () => {
+        globalThis.fetch = async (url) => {
+            assert.match(String(url), /task=code/);
+            return new Response(JSON.stringify({
+                models: [{ id: 'coder/x:free' }]
+            }), { status: 200 });
+        };
+        const ranked = await fetchRankedModels({ task: 'code' });
+        assert.equal(ranked[0].id, 'coder/x:free');
     });
 
     it('returns null when the check fails', async () => {
@@ -123,6 +150,23 @@ describe('processStream', () => {
         const { received } = await processStream(new Response(stream), (text) => parts.push(text));
         assert.equal(received, true);
         assert.equal(parts.join(''), 'Hello world');
+    });
+
+    it('picks up model id from SSE comment', async () => {
+        const stream = sseStream(
+            ': model vendor/cool:free\n\n',
+            'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n',
+            'data: [DONE]\n\n'
+        );
+        const seen = [];
+        const { received, modelId } = await processStream(
+            new Response(stream),
+            () => {},
+            { onModelId: (id) => seen.push(id) }
+        );
+        assert.equal(received, true);
+        assert.equal(modelId, 'vendor/cool:free');
+        assert.deepEqual(seen, ['vendor/cool:free']);
     });
 
     it('reports no content for a [DONE]-only stream', async () => {

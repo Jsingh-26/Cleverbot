@@ -31,7 +31,9 @@ describe('react/convex scaffold smoke', () => {
 
   it('uses live model ranking rather than a curated preference list', () => {
     const modelsFn = readFileSync('netlify/functions/models.mjs', 'utf8');
-    assert.match(modelsFn, /openrouter-live|DENY_RE|scoreModel/);
+    assert.match(modelsFn, /openrouter-live|fetchRankedFreeModels/);
+    const shared = readFileSync('netlify/functions/lib/openrouter-models.mjs', 'utf8');
+    assert.match(shared, /DENY_RE|scoreModel|detectTask/);
     assert.doesNotMatch(modelsFn, /nemotron-3-ultra-550b/);
     const config = readFileSync('src/lib/config.ts', 'utf8');
     assert.match(config, /FALLBACK_MODELS/);

@@ -233,7 +233,7 @@ body {
 
 /* Model info */
 .model-info {
-    padding: 0.25rem 3rem;
+    padding: 0.15rem 0.25rem 0.15rem 2.75rem;
     display: flex;
     justify-content: flex-start;
 }
@@ -241,6 +241,7 @@ body {
 .model-name {
     font-size: 0.75rem;
     color: #6b7280;
+    opacity: 0.9;
 }
 
 /* Input section */
@@ -254,7 +255,7 @@ body {
     border-top: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
-    align-items: stretch;
+    align-items: center;
     justify-content: center;
     z-index: 10;
 }
@@ -265,6 +266,7 @@ body {
     gap: 0.5rem;
     max-width: 48rem;
     width: 100%;
+    margin: 0 auto;
     position: relative;
 }
 
@@ -312,10 +314,12 @@ body {
 .thinking {
     display: flex;
     align-items: center;
+    justify-content: flex-start;
     gap: 0.5rem;
     padding: 0.5rem 1rem;
     color: #6b7280;
     font-size: 0.875rem;
+    width: 100%;
 }
 
 .dots {

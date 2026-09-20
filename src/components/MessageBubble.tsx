@@ -48,7 +48,7 @@ export function MessageBubble({ message }: Props) {
       {message.role === 'assistant' && message.modelId && !message.streaming && (
         <div className="model-info">
           <div className="model-name" role="status">
-            {formatModelName(message.modelId)}
+            Answered with {formatModelName(message.modelId)}
           </div>
         </div>
       )}
