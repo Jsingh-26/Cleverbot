@@ -15,6 +15,20 @@ const makeRequest = (body, method = 'POST') =>
 
 const validMessage = (content = 'hello') => [{ role: 'user', content }];
 
+const modelsCatalog = (models) => JSON.stringify({
+    data: models.map((m) => (typeof m === 'string'
+        ? {
+            id: m,
+            context_length: 8192,
+            architecture: {
+                modality: 'text->text',
+                input_modalities: ['text'],
+                output_modalities: ['text']
+            }
+        }
+        : m))
+});
+
 describe('chat serverless function', () => {
     beforeEach(() => {
         process.env.OPENROUTER_API_KEY = 'sk-or-test-key';
@@ -72,6 +86,86 @@ describe('chat serverless function', () => {
             messages: validMessage()
         }));
         assert.equal(response.status, 200);
+        assert.equal(response.headers.get('X-Model-Id'), 'openrouter/free');
+    });
+
+    it('auto-routes when model is omitted', async () => {
+        let chatBody;
+        globalThis.fetch = async (url, options) => {
+            const href = String(url);
+            if (href.includes('/models')) {
+                return new Response(modelsCatalog([
+                    { id: 'big/chat:free', context_length: 100000, architecture: { modality: 'text->text', input_modalities: ['text'], output_modalities: ['text'] } },
+                    { id: 'small/chat:free', context_length: 8000, architecture: { modality: 'text->text', input_modalities: ['text'], output_modalities: ['text'] } }
+                ]), { status: 200 });
+            }
+            chatBody = JSON.parse(options.body);
+            return new Response('data: [DONE]\n\n', { status: 200 });
+        };
+
+        const response = await handler(makeRequest({
+            messages: validMessage('What is 2+2?')
+        }));
+        assert.equal(response.status, 200);
+        assert.equal(response.headers.get('X-Model-Id'), 'big/chat:free');
+        assert.equal(response.headers.get('X-Task'), 'chat');
+        assert.equal(chatBody.model, 'big/chat:free');
+        const text = await response.text();
+        assert.match(text, /: model big\/chat:free/);
+    });
+
+    it('auto-routes when model is "auto" and prefers coder for code tasks', async () => {
+        let chatBody;
+        globalThis.fetch = async (url, options) => {
+            const href = String(url);
+            if (href.includes('/models')) {
+                return new Response(modelsCatalog([
+                    { id: 'vendor/huge-chat:free', context_length: 200000, architecture: { modality: 'text->text', input_modalities: ['text'], output_modalities: ['text'] } },
+                    { id: 'vendor/dev-coder:free', context_length: 32000, architecture: { modality: 'text->text', input_modalities: ['text'], output_modalities: ['text'] } }
+                ]), { status: 200 });
+            }
+            chatBody = JSON.parse(options.body);
+            return new Response('data: [DONE]\n\n', { status: 200 });
+        };
+
+        const response = await handler(makeRequest({
+            model: 'auto',
+            messages: validMessage('```python\ndef foo():\n  pass\n``` please debug this')
+        }));
+        assert.equal(response.status, 200);
+        assert.equal(response.headers.get('X-Model-Id'), 'vendor/dev-coder:free');
+        assert.equal(response.headers.get('X-Task'), 'code');
+        assert.equal(chatBody.model, 'vendor/dev-coder:free');
+    });
+
+    it('auto-routes vision tasks to image-capable free models', async () => {
+        let chatBody;
+        globalThis.fetch = async (url, options) => {
+            const href = String(url);
+            if (href.includes('/models')) {
+                return new Response(modelsCatalog([
+                    { id: 'text/only:free', context_length: 1_000_000, architecture: { modality: 'text->text', input_modalities: ['text'], output_modalities: ['text'] } },
+                    { id: 'vision/model:free', context_length: 32_000, architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'] } }
+                ]), { status: 200 });
+            }
+            chatBody = JSON.parse(options.body);
+            return new Response('data: [DONE]\n\n', { status: 200 });
+        };
+
+        const tinyPng = 'data:image/png;base64,iVBORw0KGgo=';
+        const response = await handler(makeRequest({
+            model: 'auto',
+            messages: [{
+                role: 'user',
+                content: [
+                    { type: 'text', text: 'describe this' },
+                    { type: 'image_url', image_url: { url: tinyPng } }
+                ]
+            }]
+        }));
+        assert.equal(response.status, 200);
+        assert.equal(chatBody.model, 'vision/model:free');
+        assert.equal(response.headers.get('X-Task'), 'vision');
     });
 
     it('rejects malformed message arrays', async () => {
@@ -151,6 +245,7 @@ describe('chat serverless function', () => {
 
         assert.equal(response.status, 200);
         assert.match(response.headers.get('content-type'), /text\/event-stream/);
+        assert.equal(response.headers.get('X-Model-Id'), ALLOWED_MODEL);
         assert.equal(capturedBody.model, ALLOWED_MODEL);
         assert.equal(capturedBody.stream, true);
         assert.ok(Array.isArray(capturedBody.plugins));
@@ -158,6 +253,7 @@ describe('chat serverless function', () => {
         assert.equal(capturedBody.plugins[0].max_results, 5);
         const text = await response.text();
         assert.match(text, /data: /);
+        assert.match(text, /: model google\/gemma-4-26b-a4b-it:free/);
     });
 
     it('forwards upstream errors with status and message', async () => {
