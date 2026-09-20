@@ -4,7 +4,7 @@ import handler from '../netlify/functions/chat.mjs';
 
 const ORIGINAL_FETCH = globalThis.fetch;
 const ORIGINAL_KEY = process.env.OPENROUTER_API_KEY;
-const ALLOWED_MODEL = 'google/gemma-4-31b-it:free';
+const ALLOWED_MODEL = 'google/gemma-4-26b-a4b-it:free';
 
 const makeRequest = (body, method = 'POST') =>
     new Request('https://example.net/api/chat', {
@@ -105,6 +105,9 @@ describe('chat serverless function', () => {
         assert.match(response.headers.get('content-type'), /text\/event-stream/);
         assert.equal(capturedBody.model, ALLOWED_MODEL);
         assert.equal(capturedBody.stream, true);
+        assert.ok(Array.isArray(capturedBody.plugins));
+        assert.equal(capturedBody.plugins[0].id, 'web');
+        assert.equal(capturedBody.plugins[0].max_results, 5);
         const text = await response.text();
         assert.match(text, /data: /);
     });
