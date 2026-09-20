@@ -1,0 +1,59 @@
+/**
+ * Browser-side message export (Markdown / HTML downloads).
+ */
+import DOMPurify from 'dompurify';
+import { safeMarkdown } from './markdown';
+import {
+  exportFilename,
+  looksLikeHtmlDocument,
+  prepareHtmlSource,
+  prepareMarkdownBody,
+  triggerBrowserDownload,
+  wrapHtmlDocument,
+} from './download';
+
+function sanitizeHtmlFragment(html: string): string {
+  return DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
+}
+
+function sanitizeHtmlDocument(html: string): string {
+  const cleaned = DOMPurify.sanitize(html, {
+    WHOLE_DOCUMENT: true,
+    ADD_TAGS: ['link', 'style', 'meta', 'title'],
+    ADD_ATTR: ['charset', 'content', 'http-equiv', 'name', 'viewport'],
+  });
+  // If purify collapsed to a fragment, wrap it.
+  if (!looksLikeHtmlDocument(cleaned)) {
+    return wrapHtmlDocument(sanitizeHtmlFragment(html));
+  }
+  return cleaned;
+}
+
+export function downloadMessageAsMarkdown(content: string): void {
+  const body = prepareMarkdownBody(content);
+  triggerBrowserDownload(exportFilename('md'), 'text/markdown;charset=utf-8', body);
+}
+
+export function downloadMessageAsHtml(content: string): void {
+  const source = prepareHtmlSource(content);
+  let doc: string;
+
+  if (source.kind === 'html') {
+    if (looksLikeHtmlDocument(source.html)) {
+      doc = sanitizeHtmlDocument(source.html);
+    } else {
+      doc = wrapHtmlDocument(sanitizeHtmlFragment(source.html));
+    }
+  } else {
+    const rendered = safeMarkdown(source.markdown);
+    const body =
+      rendered ??
+      `<pre>${source.markdown
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')}</pre>`;
+    doc = wrapHtmlDocument(body);
+  }
+
+  triggerBrowserDownload(exportFilename('html'), 'text/html;charset=utf-8', doc);
+}
