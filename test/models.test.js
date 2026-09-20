@@ -23,14 +23,14 @@ describe('models function', () => {
         // Pretend only these two are live: gemma (preferred) and lfm
         globalThis.fetch = async () => new Response(openrouterPayload([
             'liquid/lfm-2.5-2.6b:free',
-            'google/gemma-4-31b-it:free'
+            'google/gemma-4-26b-a4b-it:free'
         ]), { status: 200 });
 
         const response = await handler(get());
         assert.equal(response.status, 200);
         const body = await response.json();
         assert.deepEqual(body.models.map((m) => m.id), [
-            'google/gemma-4-31b-it:free',
+            'google/gemma-4-26b-a4b-it:free',
             'liquid/lfm-2.5-2.6b:free'
         ]);
         assert.equal(body.models[0].contextLength, 4096);
