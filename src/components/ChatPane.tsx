@@ -103,7 +103,7 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
   );
 
   const sendMessage = useCallback(
-    async (text: string, attachments: ChatAttachment[] = []): Promise<string | null> => {
+    async (text: string, attachments: ChatAttachment[] = [], forceWebSearch = false): Promise<string | null> => {
       if (isProcessing) return null;
       if (!text.trim() && attachments.length === 0) return null;
 
@@ -175,6 +175,7 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
             models,
             auto: attempt.auto,
             signal: controller.signal,
+            forceWebSearch,
           });
           if (!result.success) {
             if (result.aborted || controller.signal.aborted) break;
@@ -336,6 +337,16 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
 
       <div id="chat-display" role="log" aria-label="Chat messages" ref={displayRef}>
         <div className="message-container" role="list">
+          {displayMessages.length === 0 && !thinking && (
+            <section className="empty-state" aria-label="Start a conversation">
+              <div className="empty-mark" aria-hidden="true">C</div>
+              <h1>How can I help?</h1>
+              <p>Ask a question, attach a file, speak, or turn on Web for current information.</p>
+              <div className="starter-grid" aria-hidden="true">
+                <span>Explain something</span><span>Write or edit</span><span>Analyze a file</span><span>Search the web</span>
+              </div>
+            </section>
+          )}
           {displayMessages.map((m) => (
             <MessageBubble key={m.id} message={m} />
           ))}
@@ -347,7 +358,7 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
         disabled={isProcessing}
         isGenerating={isProcessing}
         onStop={stopGenerating}
-        onSend={(text, attachments) => void sendMessage(text, attachments)}
+        onSend={(text, attachments, forceWebSearch) => void sendMessage(text, attachments, forceWebSearch)}
       />
     </div>
   );

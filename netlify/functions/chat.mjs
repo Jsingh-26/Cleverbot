@@ -217,7 +217,11 @@ export default async (request) => {
         return jsonResponse(400, { error: 'Request body must be valid JSON' });
     }
 
-    const { model, messages, temperature = DEFAULT_TEMPERATURE } = body ?? {};
+    const { model, messages, temperature = DEFAULT_TEMPERATURE, forceWebSearch = false } = body ?? {};
+
+    if (typeof forceWebSearch !== 'boolean') {
+        return jsonResponse(422, { error: 'forceWebSearch must be a boolean' });
+    }
 
     if (!Array.isArray(messages) || messages.length === 0) {
         return jsonResponse(400, { error: 'messages must be a non-empty array' });
@@ -256,7 +260,7 @@ export default async (request) => {
     }
     const modelId = resolved.modelId;
 
-    const useWebSearch = needsWebSearch(messages);
+    const useWebSearch = forceWebSearch || needsWebSearch(messages);
 
     let upstream;
     try {
