@@ -38,6 +38,14 @@ const MAX_CONTENT_CHARS = 16000;
 const MAX_TOTAL_CHARS = 128000;
 const DEFAULT_TEMPERATURE = 0.7;
 
+// Always attach OpenRouter web search. Works with any model (including :free);
+// server tools need tool-calling which many free models lack. Web search uses
+// OpenRouter credits even when the model itself is free.
+const WEB_SEARCH_PLUGIN = {
+    id: 'web',
+    max_results: 5
+};
+
 const jsonResponse = (status, payload) =>
     new Response(JSON.stringify(payload), {
         status,
@@ -118,7 +126,13 @@ export default async (request) => {
                 'HTTP-Referer': request.headers.get('origin') || 'https://cleverbot.netlify.app',
                 'X-Title': 'Cleverbot'
             },
-            body: JSON.stringify({ model, messages, temperature, stream: true })
+            body: JSON.stringify({
+                model,
+                messages,
+                temperature,
+                stream: true,
+                plugins: [WEB_SEARCH_PLUGIN]
+            })
         });
     } catch (error) {
         return jsonResponse(502, { error: `Could not reach OpenRouter: ${error.message}` });

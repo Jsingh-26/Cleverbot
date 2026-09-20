@@ -25,6 +25,7 @@ browser ◀────── SSE stream ─────────────
   model availability and orders the fallback chain best-first.
 - **Model fallback chain**: transient failures retry with exponential backoff;
   permanent failures fall back to the next model.
+- **Web search by default**: every chat request enables OpenRouter’s `web` plugin so answers can use live web results (uses OpenRouter credits even on free models).
 - **Streaming responses** rendered as sanitized markdown (marked + DOMPurify).
 - **Conversation context**: recent history is sent with each request.
 - **Syntax highlighting** in code blocks (highlight.js).
