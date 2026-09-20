@@ -2,9 +2,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useConvexAuth, useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import type { Id } from '../../convex/_generated/dataModel';
-import { makeApiRequest, processStream, type ChatMessage } from '../lib/api';
+import {
+  makeApiRequest,
+  processStream,
+  refreshSessionModels,
+  type ChatMessage,
+} from '../lib/api';
 import { getModels } from '../lib/config';
+import {
+  buildApiContent,
+  buildPersistContent,
+  revokeAttachmentPreviews,
+  type ChatAttachment,
+} from '../lib/attachments';
 import { ChatInput } from './ChatInput';
+import { HeaderAuth } from './HeaderAuth';
 import { MessageBubble, ThinkingIndicator, type LocalMessage } from './MessageBubble';
 import { ThemeToggle } from './ThemeToggle';
 import { useTheme } from '../hooks/useTheme';
@@ -14,9 +26,10 @@ const MAX_HISTORY_MESSAGES = 24;
 type Props = {
   activeThreadId: Id<'threads'> | null;
   onThreadCreated: (id: Id<'threads'>) => void;
+  onRequestLogin: () => void;
 };
 
-export function ChatPane({ activeThreadId, onThreadCreated }: Props) {
+export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin }: Props) {
   const { isAuthenticated } = useConvexAuth();
   const { preference, resolved, setTheme } = useTheme();
   const createThread = useMutation(api.threads.createThread);
@@ -43,12 +56,10 @@ export function ChatPane({ activeThreadId, onThreadCreated }: Props) {
       content: m.content,
       modelId: m.modelId,
     }));
-    // Keep in-flight local drafts that are not yet reflected remotely.
     const remoteIds = new Set(remote.map((m) => m.content + m.role));
     const pending = localMessages.filter((m) => {
       if (m.role === 'error') return true;
       if (m.streaming) return true;
-      // Drop duplicates once remote caught up (match by role+content).
       return !remoteIds.has(m.content + m.role);
     });
     return [...remote, ...pending];
@@ -60,26 +71,43 @@ export function ChatPane({ activeThreadId, onThreadCreated }: Props) {
   }, [displayMessages, thinking]);
 
   const buildConversation = useCallback(
-    (msgs: LocalMessage[]): ChatMessage[] =>
-      msgs
+    (msgs: LocalMessage[], latestApiContent?: ChatMessage['content']): ChatMessage[] => {
+      const base: ChatMessage[] = msgs
         .filter((m) => m.role === 'user' || m.role === 'assistant')
         .slice(-MAX_HISTORY_MESSAGES)
         .map((m) => ({
-          role: m.role === 'user' ? 'user' : 'assistant',
+          role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
           content: m.content,
-        })),
+        }));
+      if (latestApiContent !== undefined && base.length > 0) {
+        // Replace last user message content with multimodal/API form when provided.
+        for (let i = base.length - 1; i >= 0; i--) {
+          if (base[i].role === 'user') {
+            base[i] = { role: 'user', content: latestApiContent };
+            break;
+          }
+        }
+      }
+      return base;
+    },
     [],
   );
 
-  const sendMessage = async (text: string) => {
-    if (!text || isProcessing) return;
+  const sendMessage = async (text: string, attachments: ChatAttachment[]) => {
+    if (isProcessing) return;
+    if (!text.trim() && attachments.length === 0) return;
+
     setIsProcessing(true);
     setThinking(true);
+
+    const persistContent = buildPersistContent(text, attachments);
+    const apiContent = buildApiContent(text, attachments);
+    const hasImages = attachments.some((a) => a.kind === 'image');
 
     const userMsg: LocalMessage = {
       id: `local-user-${Date.now()}`,
       role: 'user',
-      content: text,
+      content: persistContent,
     };
 
     let workingThreadId = activeThreadId;
@@ -95,9 +123,14 @@ export function ChatPane({ activeThreadId, onThreadCreated }: Props) {
         await appendMessage({
           threadId: workingThreadId,
           role: 'user',
-          content: text,
+          content: persistContent,
         });
       }
+
+      // Prefer vision-capable free models when this turn has images.
+      const models = hasImages
+        ? await refreshSessionModels({ hasImages: true })
+        : getModels();
 
       const historyForApi = buildConversation(
         isAuthenticated && activeThreadId && remoteMessages
@@ -111,13 +144,13 @@ export function ChatPane({ activeThreadId, onThreadCreated }: Props) {
               userMsg,
             ]
           : [...localMessages, userMsg],
+        apiContent,
       );
 
-      const models = getModels();
       let succeeded = false;
 
       for (let i = 0; i < models.length; i++) {
-        const result = await makeApiRequest(historyForApi, i);
+        const result = await makeApiRequest(historyForApi, i, { models });
         if (!result.success) {
           console.warn(`Model ${models[i]} failed:`, result.error);
           continue;
@@ -163,7 +196,6 @@ export function ChatPane({ activeThreadId, onThreadCreated }: Props) {
               modelId: result.modelId,
             });
             persistedAssistantIds.current.add(botId);
-            // Once remote query refreshes, pending filter drops these.
             setLocalMessages((prev) =>
               prev.filter((m) => m.id !== userMsg.id && m.id !== botId),
             );
@@ -201,6 +233,7 @@ export function ChatPane({ activeThreadId, onThreadCreated }: Props) {
         },
       ]);
     } finally {
+      revokeAttachmentPreviews(attachments);
       setIsProcessing(false);
       setThinking(false);
     }
@@ -210,7 +243,10 @@ export function ChatPane({ activeThreadId, onThreadCreated }: Props) {
     <div className="chat-pane">
       <header className="header" role="banner">
         <div className="header-spacer" />
-        <ThemeToggle preference={preference} resolved={resolved} onChange={setTheme} />
+        <div className="header-actions">
+          <HeaderAuth onRequestLogin={onRequestLogin} />
+          <ThemeToggle preference={preference} resolved={resolved} onChange={setTheme} />
+        </div>
       </header>
 
       <div id="chat-display" role="log" aria-label="Chat messages" ref={displayRef}>
@@ -222,7 +258,10 @@ export function ChatPane({ activeThreadId, onThreadCreated }: Props) {
         </div>
       </div>
 
-      <ChatInput disabled={isProcessing} onSend={(text) => void sendMessage(text)} />
+      <ChatInput
+        disabled={isProcessing}
+        onSend={(text, attachments) => void sendMessage(text, attachments)}
+      />
     </div>
   );
 }

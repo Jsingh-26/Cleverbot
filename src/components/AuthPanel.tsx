@@ -4,10 +4,11 @@ import { FormEvent, useState } from 'react';
 type Mode = 'signIn' | 'signUp';
 
 type Props = {
-  compact?: boolean;
+  onSuccess?: () => void;
 };
 
-export function AuthPanel({ compact = false }: Props) {
+/** Email/password form used inside the full-screen login overlay. */
+export function AuthPanel({ onSuccess }: Props) {
   const { signIn } = useAuthActions();
   const [mode, setMode] = useState<Mode>('signIn');
   const [error, setError] = useState<string | null>(null);
@@ -21,6 +22,7 @@ export function AuthPanel({ compact = false }: Props) {
     formData.set('flow', mode);
     try {
       await signIn('password', formData);
+      onSuccess?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign-in failed. Check email and password.');
     } finally {
@@ -28,33 +30,19 @@ export function AuthPanel({ compact = false }: Props) {
     }
   }
 
-  async function onAnonymous() {
-    setError(null);
-    setBusy(true);
-    try {
-      await signIn('anonymous');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not continue anonymously.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
-    <div className={`auth-panel${compact ? ' auth-panel--compact' : ''}`}>
-      <button
-        type="button"
-        className="auth-button auth-button--signin"
-        disabled={busy}
-        onClick={() => void onAnonymous()}
-      >
-        Continue anonymously
-      </button>
-      <p className="auth-divider">or use email</p>
+    <div className="auth-panel">
       <form className="auth-form" onSubmit={(e) => void onPasswordSubmit(e)}>
         <label className="auth-field">
           <span className="visually-hidden">Email</span>
-          <input name="email" type="email" autoComplete="email" placeholder="Email" required disabled={busy} />
+          <input
+            name="email"
+            type="email"
+            autoComplete="email"
+            placeholder="Email"
+            required
+            disabled={busy}
+          />
         </label>
         <label className="auth-field">
           <span className="visually-hidden">Password</span>

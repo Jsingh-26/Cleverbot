@@ -1,13 +1,13 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { SUPPORTED_MODELS, getModels } from '../src/lib/config.ts';
+import { FALLBACK_MODELS, getModels } from '../src/lib/config.ts';
 
 describe('react/convex scaffold smoke', () => {
-  it('exposes curated free models', () => {
-    assert.ok(SUPPORTED_MODELS.length > 0);
-    assert.equal(getModels().length, SUPPORTED_MODELS.length);
-    assert.ok(getModels().every((id) => id.endsWith(':free')));
+  it('exposes a tiny offline fallback model list', () => {
+    assert.ok(FALLBACK_MODELS.length > 0);
+    assert.equal(getModels().length, FALLBACK_MODELS.length);
+    assert.ok(getModels().every((id) => id === 'openrouter/free' || id.endsWith(':free')));
   });
 
   it('has Convex schema and auth files', () => {
@@ -27,5 +27,13 @@ describe('react/convex scaffold smoke', () => {
     assert.match(schema, /authTables/);
     assert.match(schema, /threads/);
     assert.match(schema, /messages/);
+  });
+
+  it('uses live model ranking rather than a curated preference list', () => {
+    const modelsFn = readFileSync('netlify/functions/models.mjs', 'utf8');
+    assert.match(modelsFn, /openrouter-live|DENY_RE|scoreModel/);
+    assert.doesNotMatch(modelsFn, /nemotron-3-ultra-550b/);
+    const config = readFileSync('src/lib/config.ts', 'utf8');
+    assert.match(config, /FALLBACK_MODELS/);
   });
 });
