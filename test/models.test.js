@@ -4,50 +4,93 @@ import handler from '../netlify/functions/models.mjs';
 
 const ORIGINAL_FETCH = globalThis.fetch;
 
-const openrouterPayload = (ids) => JSON.stringify({
-    data: ids.map((id) => ({ id, context_length: 4096 }))
+const openrouterPayload = (models) => JSON.stringify({
+    data: models.map((m) => (typeof m === 'string'
+        ? { id: m, context_length: 4096, architecture: { modality: 'text->text', input_modalities: ['text'], output_modalities: ['text'] } }
+        : m))
 });
 
-const get = () => new Request('https://example.net/api/models', { method: 'GET' });
+const get = (qs = '') => new Request(`https://example.net/api/models${qs}`, { method: 'GET' });
 
-describe('models function', () => {
+describe('models function (live ranking)', () => {
     beforeEach(() => {
-        delete process.env.OPENROUTER_API_KEY; // not required for this endpoint
+        delete process.env.OPENROUTER_API_KEY;
     });
 
     afterEach(() => {
         globalThis.fetch = ORIGINAL_FETCH;
     });
 
-    it('returns only live models, preserving curated preference order', async () => {
-        // Pretend only these two are live: gemma (preferred) and lfm
+    it('ranks live :free chat models by context length', async () => {
         globalThis.fetch = async () => new Response(openrouterPayload([
-            'liquid/lfm-2.5-2.6b:free',
-            'google/gemma-4-26b-a4b-it:free'
+            { id: 'small/chat:free', context_length: 8192, architecture: { modality: 'text->text', input_modalities: ['text'], output_modalities: ['text'] } },
+            { id: 'big/chat:free', context_length: 262144, architecture: { modality: 'text->text', input_modalities: ['text'], output_modalities: ['text'] } },
+            { id: 'mid/chat:free', context_length: 65536, architecture: { modality: 'text->text', input_modalities: ['text'], output_modalities: ['text'] } }
         ]), { status: 200 });
 
         const response = await handler(get());
         assert.equal(response.status, 200);
         const body = await response.json();
         assert.deepEqual(body.models.map((m) => m.id), [
-            'google/gemma-4-26b-a4b-it:free',
-            'liquid/lfm-2.5-2.6b:free'
+            'big/chat:free',
+            'mid/chat:free',
+            'small/chat:free'
         ]);
-        assert.equal(body.models[0].contextLength, 4096);
+        assert.equal(body.source, 'openrouter-live');
     });
 
-    it('falls back to live :free models when curated ids are offline', async () => {
-        globalThis.fetch = async () => new Response(openrouterPayload(['some/other-model:free']), { status: 200 });
+    it('excludes specialty free models via denylist', async () => {
+        globalThis.fetch = async () => new Response(openrouterPayload([
+            'vendor/cool-chat:free',
+            'nvidia/nemotron-3.5-content-safety:free',
+            'acme/text-embedding:free',
+            'acme/rerank-v2:free'
+        ]), { status: 200 });
 
         const response = await handler(get());
         const body = await response.json();
-        assert.equal(body.models.length, 1);
-        assert.equal(body.models[0].id, 'some/other-model:free');
+        assert.deepEqual(body.models.map((m) => m.id), ['vendor/cool-chat:free']);
     });
 
-    it('returns an empty list when no free models are live', async () => {
-        globalThis.fetch = async () => new Response(openrouterPayload(['paid/model-only']), { status: 200 });
+    it('prefers image-capable models when ?images=1', async () => {
+        globalThis.fetch = async () => new Response(openrouterPayload([
+            {
+                id: 'text/only:free',
+                context_length: 1_000_000,
+                architecture: { modality: 'text->text', input_modalities: ['text'], output_modalities: ['text'] }
+            },
+            {
+                id: 'vision/model:free',
+                context_length: 32_000,
+                architecture: { modality: 'text+image->text', input_modalities: ['text', 'image'], output_modalities: ['text'] }
+            }
+        ]), { status: 200 });
 
+        const response = await handler(get('?images=1'));
+        const body = await response.json();
+        assert.equal(body.preferImages, true);
+        assert.equal(body.models[0].id, 'vision/model:free');
+        assert.ok(body.models.some((m) => m.id === 'text/only:free'));
+    });
+
+    it('falls back to openrouter/free when nothing else qualifies', async () => {
+        globalThis.fetch = async () => new Response(openrouterPayload([
+            'acme/embed-only:free',
+            {
+                id: 'openrouter/free',
+                context_length: 128000,
+                architecture: { modality: 'text->text', input_modalities: ['text'], output_modalities: ['text'] }
+            }
+        ]), { status: 200 });
+
+        const response = await handler(get());
+        const body = await response.json();
+        // embed denied; openrouter/free is a candidate itself so it ranks normally
+        assert.equal(body.models[0].id, 'openrouter/free');
+    });
+
+    it('returns empty list when no free chat models are live', async () => {
+        globalThis.fetch = async () => new Response(openrouterPayload(['paid/model-only']), { status: 200 });
         const response = await handler(get());
         const body = await response.json();
         assert.deepEqual(body.models, []);

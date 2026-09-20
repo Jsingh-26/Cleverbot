@@ -52,7 +52,7 @@ describe('chat serverless function', () => {
         assert.equal(response.status, 400);
     });
 
-    it('rejects models outside the allowlist', async () => {
+    it('rejects paid / non-free models', async () => {
         const response = await handler(makeRequest({
             model: 'openai/gpt-4o',
             messages: validMessage()
@@ -62,11 +62,59 @@ describe('chat serverless function', () => {
         assert.match(body.error, /not allowed/i);
     });
 
+    it('allows openrouter/free router id', async () => {
+        globalThis.fetch = async () => new Response('data: [DONE]\n\n', {
+            status: 200,
+            headers: { 'Content-Type': 'text/event-stream' }
+        });
+        const response = await handler(makeRequest({
+            model: 'openrouter/free',
+            messages: validMessage()
+        }));
+        assert.equal(response.status, 200);
+    });
+
     it('rejects malformed message arrays', async () => {
         for (const bad of [undefined, [], 'hello', [{ role: 'admin', content: 'x' }], [{ role: 'user', content: 42 }]]) {
             const response = await handler(makeRequest({ model: ALLOWED_MODEL, messages: bad }));
             assert.equal(response.status, 400, `expected 400 for messages=${JSON.stringify(bad)}`);
         }
+    });
+
+    it('accepts multimodal content arrays with text + image_url', async () => {
+        let capturedBody;
+        globalThis.fetch = async (_url, options) => {
+            capturedBody = JSON.parse(options.body);
+            return new Response('data: [DONE]\n\n', { status: 200 });
+        };
+
+        const tinyPng = 'data:image/png;base64,iVBORw0KGgo=';
+        const response = await handler(makeRequest({
+            model: ALLOWED_MODEL,
+            messages: [{
+                role: 'user',
+                content: [
+                    { type: 'text', text: 'what is in this image?' },
+                    { type: 'image_url', image_url: { url: tinyPng } }
+                ]
+            }]
+        }));
+        assert.equal(response.status, 200);
+        assert.equal(capturedBody.messages[0].content[1].type, 'image_url');
+    });
+
+    it('rejects invalid image_url parts', async () => {
+        const response = await handler(makeRequest({
+            model: ALLOWED_MODEL,
+            messages: [{
+                role: 'user',
+                content: [
+                    { type: 'text', text: 'hi' },
+                    { type: 'image_url', image_url: { url: 'javascript:alert(1)' } }
+                ]
+            }]
+        }));
+        assert.equal(response.status, 400);
     });
 
     it('rejects invalid temperature values', async () => {

@@ -1,16 +1,15 @@
 import { useConvexAuth, useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import type { Id } from '../../convex/_generated/dataModel';
-import { AuthButton } from './AuthButton';
-import { AuthPanel } from './AuthPanel';
 
 type Props = {
   activeThreadId: Id<'threads'> | null;
   onSelectThread: (id: Id<'threads'> | null) => void;
   onNewChat: () => void;
+  onRequestLogin?: () => void;
 };
 
-export function Sidebar({ activeThreadId, onSelectThread, onNewChat }: Props) {
+export function Sidebar({ activeThreadId, onSelectThread, onNewChat, onRequestLogin }: Props) {
   const { isAuthenticated, isLoading } = useConvexAuth();
   const threads = useQuery(api.threads.listThreads, isAuthenticated ? {} : 'skip');
   const deleteThread = useMutation(api.threads.deleteThread);
@@ -28,9 +27,19 @@ export function Sidebar({ activeThreadId, onSelectThread, onNewChat }: Props) {
 
       <div className="sidebar-body">
         {!isAuthenticated && !isLoading && (
-          <div className="sidebar-cta">
-            <p>Save chats with a free account, or continue anonymously.</p>
-            <AuthPanel />
+          <div className="sidebar-cta sidebar-cta--hint">
+            <p>
+              {onRequestLogin ? (
+                <>
+                  <button type="button" className="auth-link sidebar-login-link" onClick={onRequestLogin}>
+                    Log in
+                  </button>
+                  {' to save chats'}
+                </>
+              ) : (
+                'Log in to save chats'
+              )}
+            </p>
           </div>
         )}
 
@@ -66,10 +75,6 @@ export function Sidebar({ activeThreadId, onSelectThread, onNewChat }: Props) {
             )}
           </ul>
         )}
-      </div>
-
-      <div className="sidebar-footer">
-        {isAuthenticated ? <AuthButton /> : null}
       </div>
     </aside>
   );

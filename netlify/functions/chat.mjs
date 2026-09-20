@@ -4,38 +4,26 @@
 // never sees it. This function validates incoming requests and forwards them
 // to OpenRouter, streaming the SSE response back to the client.
 //
-// Keep ALLOWED_MODELS in sync with SUPPORTED_MODELS in src/lib/config.ts.
+// Any live OpenRouter `:free` model id is allowed (plus the `openrouter/free`
+// router). Model preference is decided client-side from GET /api/models.
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
-const ALLOWED_MODELS = new Set([
-    'google/gemma-4-26b-a4b-it:free',
-    'liquid/lfm-2.5-2.6b:free',
-    'nvidia/nemotron-3-super-120b-a12b:free',
-    'google/gemma-4-31b-it:free',
-    'qwen/qwen3.8-27b:free',
-    'z-ai/glm-5.2:free',
-    'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
-    'nvidia/nemotron-3.5-lightning:free',
-    'cohere/north-mini-code:free',
-    'thinkingmachines/inkling:free',
-    'thinkingmachines/inkling-small:free',
-    'poolside/laguna-s-2.1:free'
-]);
-
-// Prefer the curated set; also allow any other OpenRouter :free id so
-// chat keeps working when the free roster rotates.
 const isAllowedModel = (model) =>
     typeof model === 'string'
     && model.length > 0
     && model.length < 200
-    && /^[a-z0-9][a-z0-9._/-]*:free$/i.test(model)
-    && (ALLOWED_MODELS.has(model) || model.endsWith(':free'));
+    && (
+        model === 'openrouter/free'
+        || (/^[a-z0-9][a-z0-9._/-]*:free$/i.test(model) && model.endsWith(':free'))
+    );
 
 const ALLOWED_ROLES = new Set(['system', 'user', 'assistant']);
 const MAX_MESSAGES = 40;
 const MAX_CONTENT_CHARS = 16000;
 const MAX_TOTAL_CHARS = 128000;
+const MAX_IMAGE_DATA_URL_CHARS = 7_000_000; // ~5MB binary as base64 data URL
+const MAX_PARTS_PER_MESSAGE = 12;
 const DEFAULT_TEMPERATURE = 0.7;
 
 // Always attach OpenRouter web search. Works with any model (including :free);
@@ -60,6 +48,69 @@ const upstreamErrorMessage = async (upstream) => {
         // Upstream error body was not JSON — fall through to the generic message.
     }
     return `Upstream error (HTTP ${upstream.status})`;
+};
+
+const isDataImageUrl = (url) =>
+    typeof url === 'string'
+    && /^data:image\/(png|jpeg|jpg|webp|gif);base64,/i.test(url)
+    && url.length <= MAX_IMAGE_DATA_URL_CHARS;
+
+const isHttpImageUrl = (url) =>
+    typeof url === 'string'
+    && /^https?:\/\//i.test(url)
+    && url.length < 4000;
+
+/** Validate string or OpenAI-style multimodal content; returns char count. */
+const validateContent = (content) => {
+    if (typeof content === 'string') {
+        if (content.length > MAX_CONTENT_CHARS) {
+            return { ok: false, error: `Message exceeds ${MAX_CONTENT_CHARS} characters` };
+        }
+        return { ok: true, chars: content.length };
+    }
+
+    if (!Array.isArray(content)) {
+        return {
+            ok: false,
+            error: 'Each message content must be a string or an array of text/image_url parts'
+        };
+    }
+    if (content.length === 0 || content.length > MAX_PARTS_PER_MESSAGE) {
+        return {
+            ok: false,
+            error: `Multimodal content must have 1–${MAX_PARTS_PER_MESSAGE} parts`
+        };
+    }
+
+    let chars = 0;
+    for (const part of content) {
+        if (!part || typeof part !== 'object') {
+            return { ok: false, error: 'Invalid content part' };
+        }
+        if (part.type === 'text') {
+            if (typeof part.text !== 'string') {
+                return { ok: false, error: 'text parts require a string text field' };
+            }
+            if (part.text.length > MAX_CONTENT_CHARS) {
+                return { ok: false, error: `Message exceeds ${MAX_CONTENT_CHARS} characters` };
+            }
+            chars += part.text.length;
+            continue;
+        }
+        if (part.type === 'image_url') {
+            const url = part.image_url?.url ?? part.image_url;
+            if (!isDataImageUrl(url) && !isHttpImageUrl(url)) {
+                return {
+                    ok: false,
+                    error: 'image_url must be a data:image/(png|jpeg|webp|gif) URL (≤5MB) or https URL'
+                };
+            }
+            chars += typeof url === 'string' ? Math.min(url.length, 256) : 0;
+            continue;
+        }
+        return { ok: false, error: 'Content parts must be type "text" or "image_url"' };
+    }
+    return { ok: true, chars };
 };
 
 export default async (request) => {
@@ -100,17 +151,17 @@ export default async (request) => {
         if (
             !message ||
             typeof message !== 'object' ||
-            !ALLOWED_ROLES.has(message.role) ||
-            typeof message.content !== 'string'
+            !ALLOWED_ROLES.has(message.role)
         ) {
             return jsonResponse(400, {
-                error: 'Each message must be { role: "user"|"assistant"|"system", content: string }'
+                error: 'Each message must be { role: "user"|"assistant"|"system", content: string | parts[] }'
             });
         }
-        if (message.content.length > MAX_CONTENT_CHARS) {
-            return jsonResponse(400, { error: `Message exceeds ${MAX_CONTENT_CHARS} characters` });
+        const checked = validateContent(message.content);
+        if (!checked.ok) {
+            return jsonResponse(400, { error: checked.error });
         }
-        totalChars += message.content.length;
+        totalChars += checked.chars;
     }
     if (totalChars > MAX_TOTAL_CHARS) {
         return jsonResponse(413, { error: 'Conversation too long' });
@@ -144,7 +195,6 @@ export default async (request) => {
         return jsonResponse(status, { error: message });
     }
 
-    // Passthrough: forward the SSE stream to the browser unchanged.
     return new Response(upstream.body, {
         status: 200,
         headers: {
@@ -154,6 +204,4 @@ export default async (request) => {
     });
 };
 
-// Serve this function at /api/chat (config.path takes priority over redirects;
-// the /api/* redirect in netlify.toml is a fallback).
 export const config = { path: '/api/chat' };
