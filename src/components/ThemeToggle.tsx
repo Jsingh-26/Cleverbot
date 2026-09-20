@@ -1,10 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
-import type { ThemePreference } from '../hooks/useTheme';
-
 type Props = {
-  preference: ThemePreference;
   resolved: 'light' | 'dark';
-  onChange: (theme: ThemePreference) => void;
+  onToggle: () => void;
 };
 
 const SunIcon = () => (
@@ -27,63 +23,18 @@ const MoonIcon = () => (
   </svg>
 );
 
-const SystemIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-    <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-  </svg>
-);
-
-export function ThemeToggle({ preference, resolved, onChange }: Props) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const onClick = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('click', onClick);
-    return () => document.removeEventListener('click', onClick);
-  }, []);
+export function ThemeToggle({ resolved, onToggle }: Props) {
+  const nextLabel = resolved === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
 
   return (
-    <div className="theme-switcher" ref={rootRef}>
-      <button
-        type="button"
-        className="theme-toggle"
-        aria-label="Toggle theme menu"
-        aria-expanded={open}
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen((v) => !v);
-        }}
-      >
-        {resolved === 'dark' ? <MoonIcon /> : <SunIcon />}
-      </button>
-      <div className={`theme-options${open ? ' show' : ''}`} role="menu" aria-label="Theme options">
-        {(
-          [
-            { id: 'light', label: 'Light', icon: <SunIcon /> },
-            { id: 'dark', label: 'Dark', icon: <MoonIcon /> },
-            { id: 'system', label: 'System', icon: <SystemIcon /> },
-          ] as const
-        ).map((opt) => (
-          <button
-            key={opt.id}
-            type="button"
-            className={`theme-option${preference === opt.id ? ' active' : ''}`}
-            role="menuitem"
-            aria-pressed={preference === opt.id}
-            onClick={(e) => {
-              e.stopPropagation();
-              onChange(opt.id);
-              setOpen(false);
-            }}
-          >
-            {opt.icon}
-            {opt.label}
-          </button>
-        ))}
-      </div>
-    </div>
+    <button
+      type="button"
+      className="theme-toggle"
+      aria-label={nextLabel}
+      title={nextLabel}
+      onClick={onToggle}
+    >
+      {resolved === 'dark' ? <MoonIcon /> : <SunIcon />}
+    </button>
   );
 }
