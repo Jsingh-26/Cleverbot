@@ -4,7 +4,7 @@
 // never sees it. This function validates incoming requests and forwards them
 // to OpenRouter, streaming the SSE response back to the client.
 //
-// Keep ALLOWED_MODELS in sync with SUPPORTED_MODELS in src/js/config.js.
+// Keep ALLOWED_MODELS in sync with SUPPORTED_MODELS in src/lib/config.ts.
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 

@@ -7,7 +7,7 @@
 // returned #1 is the best *currently available* model — it can change on
 // every page refresh as models come and go.
 //
-// Keep SUPPORTED in sync with SUPPORTED_MODELS in src/js/config.js.
+// Keep SUPPORTED in sync with SUPPORTED_MODELS in src/lib/config.ts.
 
 const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
 
