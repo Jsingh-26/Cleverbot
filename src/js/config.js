@@ -14,14 +14,14 @@ export const MODELS_ENDPOINT = '/api/models';
 //
 // Keep ids in sync with the functions in netlify/functions/.
 export const SUPPORTED_MODELS = [
-    { id: 'google/gemma-4-31b-it:free', name: 'Gemma 4 31B', provider: 'Google' },
     { id: 'google/gemma-4-26b-a4b-it:free', name: 'Gemma 4 26B A4B', provider: 'Google' },
+    { id: 'liquid/lfm-2.5-2.6b:free', name: 'LFM 2.5 2.6B', provider: 'Liquid' },
+    { id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron 3 Super 120B', provider: 'NVIDIA' },
+    { id: 'google/gemma-4-31b-it:free', name: 'Gemma 4 31B', provider: 'Google' },
     { id: 'qwen/qwen3.8-27b:free', name: 'Qwen 3.8 27B', provider: 'Qwen' },
     { id: 'z-ai/glm-5.2:free', name: 'GLM 5.2', provider: 'Z.AI' },
     { id: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', name: 'Nemotron 3 Nano Omni Reasoning', provider: 'NVIDIA' },
-    { id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron 3 Super 120B', provider: 'NVIDIA' },
     { id: 'nvidia/nemotron-3.5-lightning:free', name: 'Nemotron 3.5 Lightning', provider: 'NVIDIA' },
-    { id: 'liquid/lfm-2.5-2.6b:free', name: 'LFM 2.5 2.6B', provider: 'Liquid' },
     { id: 'cohere/north-mini-code:free', name: 'North Mini Code', provider: 'Cohere' },
     { id: 'thinkingmachines/inkling:free', name: 'Inkling', provider: 'Thinking Machines' },
     { id: 'thinkingmachines/inkling-small:free', name: 'Inkling Small', provider: 'Thinking Machines' },
