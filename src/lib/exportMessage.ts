@@ -7,7 +7,6 @@ import {
   exportFilename,
   looksLikeHtmlDocument,
   prepareHtmlSource,
-  prepareMarkdownBody,
   triggerBrowserDownload,
   wrapHtmlDocument,
 } from './download';
@@ -27,11 +26,6 @@ function sanitizeHtmlDocument(html: string): string {
     return wrapHtmlDocument(sanitizeHtmlFragment(html));
   }
   return cleaned;
-}
-
-export function downloadMessageAsMarkdown(content: string): void {
-  const body = prepareMarkdownBody(content);
-  triggerBrowserDownload(exportFilename('md'), 'text/markdown;charset=utf-8', body);
 }
 
 export function downloadMessageAsHtml(content: string): void {
