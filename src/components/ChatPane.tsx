@@ -47,6 +47,7 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
   const [thinking, setThinking] = useState(false);
   const displayRef = useRef<HTMLDivElement>(null);
   const persistedAssistantIds = useRef(new Set<string>());
+  const activeRequest = useRef<AbortController | null>(null);
 
   const displayMessages: LocalMessage[] = useMemo(() => {
     if (!isAuthenticated || !activeThreadId) {
@@ -108,6 +109,8 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
 
       setIsProcessing(true);
       setThinking(true);
+      const controller = new AbortController();
+      activeRequest.current = controller;
 
       const persistContent = buildPersistContent(text, attachments);
       const apiContent = buildApiContent(text, attachments);
@@ -171,8 +174,10 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
           const result = await makeApiRequest(historyForApi, attempt.index, {
             models,
             auto: attempt.auto,
+            signal: controller.signal,
           });
           if (!result.success) {
+            if (result.aborted || controller.signal.aborted) break;
             console.warn(`Model ${attempt.label} failed:`, result.error);
             continue;
           }
@@ -203,6 +208,7 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
                 );
               },
               {
+                signal: controller.signal,
                 onModelId: (id) => {
                   usedModelId = id;
                   setLocalMessages((prev) =>
@@ -243,12 +249,18 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
             succeeded = true;
             break;
           } catch (streamError) {
+            if (controller.signal.aborted) {
+              setLocalMessages((prev) =>
+                prev.map((m) => (m.id === botId ? { ...m, streaming: false } : m)),
+              );
+              break;
+            }
             console.warn(`Stream from ${attempt.label} failed:`, (streamError as Error).message);
             setLocalMessages((prev) => prev.filter((m) => m.id !== botId));
           }
         }
 
-        if (!succeeded) {
+        if (!succeeded && !controller.signal.aborted) {
           setThinking(false);
           setLocalMessages((prev) => [
             ...prev,
@@ -261,6 +273,7 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
           ]);
         }
       } catch (error) {
+        if (controller.signal.aborted) return assistantReply;
         console.error('Unexpected error in sendMessage:', error);
         setThinking(false);
         setLocalMessages((prev) => [
@@ -272,6 +285,7 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
           },
         ]);
       } finally {
+        if (activeRequest.current === controller) activeRequest.current = null;
         revokeAttachmentPreviews(attachments);
         setIsProcessing(false);
         setThinking(false);
@@ -291,6 +305,13 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
       remoteMessages,
     ],
   );
+
+
+  const stopGenerating = useCallback(() => {
+    activeRequest.current?.abort();
+    setThinking(false);
+    setIsProcessing(false);
+  }, []);
 
 
   return (
@@ -324,6 +345,8 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
 
       <ChatInput
         disabled={isProcessing}
+        isGenerating={isProcessing}
+        onStop={stopGenerating}
         onSend={(text, attachments) => void sendMessage(text, attachments)}
       />
     </div>

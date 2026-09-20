@@ -235,13 +235,15 @@ export const makeApiRequest = async (
 export const processStream = async (
   response: Response,
   onChunk: (text: string) => void,
-  opts?: { onModelId?: (id: string) => void },
+  opts?: { onModelId?: (id: string) => void; signal?: AbortSignal },
 ): Promise<{ received: boolean; modelId?: string }> => {
   if (!response.body) {
     throw new Error('Response has no readable body');
   }
 
   const reader = response.body.getReader();
+  const onAbort = () => void reader.cancel('Request cancelled');
+  opts?.signal?.addEventListener('abort', onAbort, { once: true });
   const decoder = new TextDecoder();
   let buffer = '';
   let received = false;
@@ -288,6 +290,7 @@ export const processStream = async (
     buffer += decoder.decode();
     if (buffer) handleLine(buffer);
   } finally {
+    opts?.signal?.removeEventListener('abort', onAbort);
     reader.releaseLock();
   }
 

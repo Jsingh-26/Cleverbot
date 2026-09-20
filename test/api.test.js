@@ -84,6 +84,18 @@ describe('client api module', () => {
         const result = await makeApiRequest(messages, 99);
         assert.equal(result.success, false);
     });
+
+    it('cancels an in-flight request through AbortController', async () => {
+        globalThis.fetch = async (_url, options) => await new Promise((_resolve, reject) => {
+            options.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+        });
+        const controller = new AbortController();
+        const pending = makeApiRequest(messages, 0, { signal: controller.signal });
+        controller.abort();
+        const result = await pending;
+        assert.equal(result.success, false);
+        assert.equal(result.aborted, true);
+    });
 });
 
 describe('fetchRankedModels', () => {

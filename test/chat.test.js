@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import handler from '../netlify/functions/chat.mjs';
+import handler, { needsWebSearch } from '../netlify/functions/chat.mjs';
 
 const ORIGINAL_FETCH = globalThis.fetch;
 const ORIGINAL_KEY = process.env.OPENROUTER_API_KEY;
@@ -248,9 +248,7 @@ describe('chat serverless function', () => {
         assert.equal(response.headers.get('X-Model-Id'), ALLOWED_MODEL);
         assert.equal(capturedBody.model, ALLOWED_MODEL);
         assert.equal(capturedBody.stream, true);
-        assert.ok(Array.isArray(capturedBody.plugins));
-        assert.equal(capturedBody.plugins[0].id, 'web');
-        assert.equal(capturedBody.plugins[0].max_results, 5);
+        assert.equal('plugins' in capturedBody, false);
         const text = await response.text();
         assert.match(text, /data: /);
         assert.match(text, /: model google\/gemma-4-26b-a4b-it:free/);
@@ -270,5 +268,33 @@ describe('chat serverless function', () => {
         assert.equal(response.status, 429);
         const body = await response.json();
         assert.equal(body.error, 'Model overloaded');
+    });
+});
+
+
+describe('conditional web search', () => {
+    it('uses search for explicit and time-sensitive requests', () => {
+        assert.equal(needsWebSearch(validMessage('Search the web for this')), true);
+        assert.equal(needsWebSearch(validMessage('What is the weather today?')), true);
+        assert.equal(needsWebSearch(validMessage('Who is the current prime minister?')), true);
+    });
+
+    it('does not spend search credits on ordinary prompts', () => {
+        assert.equal(needsWebSearch(validMessage('Explain recursion simply')), false);
+        assert.equal(needsWebSearch(validMessage('Write a poem about rain')), false);
+        assert.equal(needsWebSearch(validMessage('Refactor this function')), false);
+    });
+
+    it('omits plugins for ordinary chat and includes them for current facts', async () => {
+        process.env.OPENROUTER_API_KEY = 'sk-or-test-key';
+        const bodies = [];
+        globalThis.fetch = async (_url, options) => {
+            bodies.push(JSON.parse(options.body));
+            return new Response('data: [DONE]\n\n', { status: 200 });
+        };
+        await handler(makeRequest({ model: ALLOWED_MODEL, messages: validMessage('Explain recursion') }));
+        await handler(makeRequest({ model: ALLOWED_MODEL, messages: validMessage('What is the weather today?') }));
+        assert.equal('plugins' in bodies[0], false);
+        assert.deepEqual(bodies[1].plugins, [{ id: 'web', max_results: 5 }]);
     });
 });

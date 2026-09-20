@@ -5,7 +5,6 @@ import { Sidebar } from './components/Sidebar';
 import { ChatPane } from './components/ChatPane';
 import { AuthOverlay } from './components/AuthOverlay';
 import { refreshSessionModels } from './lib/api';
-import { getModels } from './lib/config';
 
 export default function App() {
   const { isAuthenticated } = useConvexAuth();
@@ -18,8 +17,7 @@ export default function App() {
   // Fresh live ranking on initial load and every new chat.
   useEffect(() => {
     void (async () => {
-      const ids = await refreshSessionModels();
-      console.log('Live model order for this chat (best first):', ids.length ? ids : getModels());
+      await refreshSessionModels();
     })();
   }, [modelEpoch, guestEpoch]);
 
