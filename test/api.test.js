@@ -47,6 +47,18 @@ describe('client api module', () => {
         assert.equal(result.modelId, 'picked/model:free');
     });
 
+    it('sends an explicit force-web-search flag when selected', async () => {
+        let body;
+        globalThis.fetch = async (_url, options) => {
+            body = JSON.parse(options.body);
+            return new Response('ok', { status: 200 });
+        };
+
+        const result = await makeApiRequest(messages, 0, { forceWebSearch: true });
+        assert.equal(result.success, true);
+        assert.equal(body.forceWebSearch, true);
+    });
+
     it('fails immediately on non-retryable 4xx (no retries)', async () => {
         let calls = 0;
         globalThis.fetch = async () => {

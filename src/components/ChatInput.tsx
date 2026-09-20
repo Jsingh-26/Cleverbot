@@ -9,7 +9,7 @@ type Props = {
   disabled?: boolean;
   isGenerating?: boolean;
   onStop?: () => void;
-  onSend: (text: string, attachments: ChatAttachment[]) => void;
+  onSend: (text: string, attachments: ChatAttachment[], forceWebSearch: boolean) => void;
 };
 
 type SpeechRecognitionLike = {
@@ -43,6 +43,7 @@ export function ChatInput({ disabled, isGenerating, onStop, onSend }: Props) {
   const [attachError, setAttachError] = useState<string | null>(null);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [listening, setListening] = useState(false);
+  const [forceWebSearch, setForceWebSearch] = useState(false);
   const [speechSupported] = useState(() => Boolean(getSpeechRecognitionCtor()));
   const imageRef = useRef<HTMLInputElement>(null);
   const textRef = useRef<HTMLInputElement>(null);
@@ -89,7 +90,7 @@ export function ChatInput({ disabled, isGenerating, onStop, onSend }: Props) {
     if (listening) stopListening();
     const text = value.trim();
     const pending = attachments;
-    onSend(text, pending);
+    onSend(text, pending, forceWebSearch);
     setValue('');
     setAttachments([]);
     setAttachError(null);
@@ -298,6 +299,23 @@ export function ChatInput({ disabled, isGenerating, onStop, onSend }: Props) {
             </div>
           )}
         </div>
+
+        <button
+          type="button"
+          className={`web-search-btn${forceWebSearch ? ' web-search-btn--active' : ''}`}
+          aria-label={forceWebSearch ? 'Web search on' : 'Turn on web search'}
+          aria-pressed={forceWebSearch}
+          title={forceWebSearch ? 'Web search on' : 'Search the web for this message'}
+          disabled={disabled}
+          onClick={() => setForceWebSearch((enabled) => !enabled)}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-4-4" />
+            <path d="M4 11h14M11 4a11 11 0 0 1 0 14M11 4a11 11 0 0 0 0 14" />
+          </svg>
+          <span className="web-search-label">Web</span>
+        </button>
 
         <textarea
           ref={composerRef}

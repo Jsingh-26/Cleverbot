@@ -163,12 +163,14 @@ export const makeApiRequest = async (
     models,
     /** Prefer server-side auto routing (model omitted / "auto"). */
     auto = false,
+    forceWebSearch = false,
   }: {
     maxRetries?: number;
     signal?: AbortSignal;
     temperature?: number;
     models?: string[];
     auto?: boolean;
+    forceWebSearch?: boolean;
   } = {},
 ): Promise<ApiRequestResult> => {
   const list = models && models.length ? models : getModels();
@@ -183,6 +185,7 @@ export const makeApiRequest = async (
         messages,
         temperature,
         stream: true,
+        forceWebSearch,
       };
       payload.model = auto ? 'auto' : explicitId;
 

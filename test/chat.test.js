@@ -296,5 +296,19 @@ describe('conditional web search', () => {
         await handler(makeRequest({ model: ALLOWED_MODEL, messages: validMessage('What is the weather today?') }));
         assert.equal('plugins' in bodies[0], false);
         assert.deepEqual(bodies[1].plugins, [{ id: 'web', max_results: 5 }]);
+
+        bodies.length = 0;
+        const forced = await handler(new Request('https://example.test/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: 'openrouter/free',
+                messages: validMessage('Explain closures'),
+                forceWebSearch: true
+            })
+        }));
+        assert.equal(forced.status, 200);
+        assert.deepEqual(bodies[0].plugins, [{ id: 'web', max_results: 5 }]);
+
     });
 });
