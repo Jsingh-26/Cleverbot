@@ -1,30 +1,19 @@
-// Live model availability ranking (Netlify Function v2).
+// Live free-model ranking (Netlify Function v2).
 //
-//   GET /api/models  →  { models: [{ id, name, provider, contextLength }] }
+//   GET /api/models           → best general free chat models right now
+//   GET /api/models?images=1  → same, but prefer models that accept image input
 //
-// The curated list below defines our preference order ("best" first). At
-// request time it is filtered against OpenRouter's live model list, so the
-// returned #1 is the best *currently available* model — it can change on
-// every page refresh as models come and go.
-//
-// Keep SUPPORTED in sync with SUPPORTED_MODELS in src/lib/config.ts.
+// There is NO hand-curated preference list. We fetch OpenRouter's live catalog,
+// drop non-chat specialty free models (embeddings, rerankers, safety classifiers),
+// and rank the rest by context / capability signals.
 
 const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
+const MAX_RETURN = 12;
+const OPENROUTER_FREE_ROUTER = 'openrouter/free';
 
-const SUPPORTED = [
-    { id: 'google/gemma-4-26b-a4b-it:free', name: 'Gemma 4 26B A4B', provider: 'Google' },
-    { id: 'liquid/lfm-2.5-2.6b:free', name: 'LFM 2.5 2.6B', provider: 'Liquid' },
-    { id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron 3 Super 120B', provider: 'NVIDIA' },
-    { id: 'google/gemma-4-31b-it:free', name: 'Gemma 4 31B', provider: 'Google' },
-    { id: 'qwen/qwen3.8-27b:free', name: 'Qwen 3.8 27B', provider: 'Qwen' },
-    { id: 'z-ai/glm-5.2:free', name: 'GLM 5.2', provider: 'Z.AI' },
-    { id: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', name: 'Nemotron 3 Nano Omni Reasoning', provider: 'NVIDIA' },
-    { id: 'nvidia/nemotron-3.5-lightning:free', name: 'Nemotron 3.5 Lightning', provider: 'NVIDIA' },
-    { id: 'cohere/north-mini-code:free', name: 'North Mini Code', provider: 'Cohere' },
-    { id: 'thinkingmachines/inkling:free', name: 'Inkling', provider: 'Thinking Machines' },
-    { id: 'thinkingmachines/inkling-small:free', name: 'Inkling Small', provider: 'Thinking Machines' },
-    { id: 'poolside/laguna-s-2.1:free', name: 'Laguna S 2.1', provider: 'Poolside' }
-];
+/** Free models that are not useful as general chat backends. */
+const DENY_RE =
+    /embed|embedding|rerank|ranker|content-safety|moderat|whisper|tts|transcri|speech-to-text|asr|clip-vit|vision-encoder|guardrail/i;
 
 const jsonResponse = (status, payload) =>
     new Response(JSON.stringify(payload), {
@@ -32,15 +21,60 @@ const jsonResponse = (status, payload) =>
         headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
     });
 
+const providerFromId = (id) => {
+    const [provider = 'Unknown'] = id.split('/');
+    return provider.charAt(0).toUpperCase() + provider.slice(1);
+};
+
+const displayName = (id, name) => {
+    if (typeof name === 'string' && name.trim()) return name.trim();
+    const rest = id.includes('/') ? id.split('/').slice(1).join('/') : id;
+    return rest.replace(/:free$/i, '');
+};
+
+const inputModalities = (m) => {
+    const listed = m?.architecture?.input_modalities;
+    if (Array.isArray(listed) && listed.length) {
+        return listed.map((x) => String(x).toLowerCase());
+    }
+    const modality = String(m?.architecture?.modality || '');
+    const left = modality.split('->')[0] || '';
+    return left.split('+').map((s) => s.trim().toLowerCase()).filter(Boolean);
+};
+
+const acceptsImage = (m) => inputModalities(m).includes('image');
+
+const isFreeChatCandidate = (m) => {
+    if (!m || typeof m.id !== 'string') return false;
+    const id = m.id;
+    if (!(id.endsWith(':free') || id === OPENROUTER_FREE_ROUTER)) return false;
+    if (DENY_RE.test(id) || DENY_RE.test(String(m.name || ''))) return false;
+    const outs = m.architecture?.output_modalities;
+    if (Array.isArray(outs) && outs.length && !outs.map(String).includes('text')) return false;
+    return true;
+};
+
+/** Higher score = better for general chat (and optionally vision). */
+const scoreModel = (m, wantImages) => {
+    const ctx = Number(m.context_length) || Number(m.top_provider?.context_length) || 0;
+    const maxOut = Number(m.top_provider?.max_completion_tokens) || 0;
+    const imageBonus = wantImages && acceptsImage(m) ? 1e12 : 0;
+    // Prefer large context, then large completion budget. Tiny models sink.
+    return imageBonus + ctx * 1e3 + maxOut;
+};
+
 export default async (request) => {
     if (request.method !== 'GET') {
         return jsonResponse(405, { error: 'Method not allowed' });
     }
 
-    // The OpenRouter models endpoint is public; the key just raises rate limits.
-    const headers = { 'Accept': 'application/json' };
+    const url = new URL(request.url);
+    const wantImages = url.searchParams.get('images') === '1'
+        || url.searchParams.get('images') === 'true';
+
+    const headers = { Accept: 'application/json' };
     const apiKey = process.env.OPENROUTER_API_KEY;
-    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
     let live;
     try {
@@ -53,36 +87,37 @@ export default async (request) => {
         return jsonResponse(502, { error: `Could not reach OpenRouter: ${error.message}` });
     }
 
-    const liveById = new Map(
-        (Array.isArray(live?.data) ? live.data : []).map((m) => [m.id, m])
-    );
+    const candidates = (Array.isArray(live?.data) ? live.data : []).filter(isFreeChatCandidate);
 
-    // Filter to live models, keeping the curated preference order.
-    let models = SUPPORTED
-        .filter((m) => liveById.has(m.id))
-        .map((m) => ({ ...m, contextLength: liveById.get(m.id)?.context_length ?? null }));
+    candidates.sort((a, b) => scoreModel(b, wantImages) - scoreModel(a, wantImages));
 
-    // OpenRouter rotates free models often. If none of our curated ids are
-    // live, fall back to whatever :free models are currently listed.
+    let models = candidates.slice(0, MAX_RETURN).map((m) => ({
+        id: m.id,
+        name: displayName(m.id, m.name),
+        provider: providerFromId(m.id),
+        contextLength: m.context_length ?? m.top_provider?.context_length ?? null,
+        inputModalities: inputModalities(m)
+    }));
+
+    // Last-resort router if ranking somehow produced nothing.
     if (models.length === 0) {
-        models = [...liveById.values()]
-            .filter((m) => typeof m.id === 'string' && m.id.endsWith(':free'))
-            .slice(0, 12)
-            .map((m) => {
-                const [provider = 'Unknown', rest = m.id] = m.id.split('/');
-                const name = rest.replace(/:free$/, '');
-                return {
-                    id: m.id,
-                    name,
-                    provider: provider.charAt(0).toUpperCase() + provider.slice(1),
-                    contextLength: m.context_length ?? null
-                };
-            });
+        const router = (Array.isArray(live?.data) ? live.data : [])
+            .find((m) => m.id === OPENROUTER_FREE_ROUTER);
+        if (router) {
+            models = [{
+                id: OPENROUTER_FREE_ROUTER,
+                name: 'OpenRouter Free',
+                provider: 'Openrouter',
+                contextLength: router.context_length ?? null,
+                inputModalities: inputModalities(router)
+            }];
+        }
     }
 
     return jsonResponse(200, {
         models,
-        source: 'openrouter',
+        source: 'openrouter-live',
+        preferImages: wantImages,
         fetchedAt: new Date().toISOString()
     });
 };

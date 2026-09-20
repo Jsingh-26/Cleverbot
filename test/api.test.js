@@ -1,7 +1,7 @@
 import { describe, it, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeApiRequest, processStream, fetchRankedModels } from '../src/lib/api.ts';
-import { SUPPORTED_MODELS, setActiveModels, getModels } from '../src/lib/config.ts';
+import { FALLBACK_MODELS, setActiveModels, getModels } from '../src/lib/config.ts';
 
 const ORIGINAL_FETCH = globalThis.fetch;
 const messages = [{ role: 'user', content: 'hello' }];
@@ -19,6 +19,7 @@ const sseStream = (...chunks) => {
 describe('client api module', () => {
     afterEach(() => {
         globalThis.fetch = ORIGINAL_FETCH;
+        setActiveModels(FALLBACK_MODELS.map((m) => m.id));
     });
 
     it('returns success with the raw response on HTTP 200', async () => {
@@ -60,7 +61,7 @@ describe('client api module', () => {
         const result = await makeApiRequest(messages, 0, { maxRetries: 1 });
         assert.equal(result.success, false);
         assert.equal(result.error, 'rate limited');
-        assert.equal(calls, 2); // initial attempt + 1 retry
+        assert.equal(calls, 2);
     });
 
     it('fails gracefully for unknown model indexes', async () => {
@@ -72,15 +73,30 @@ describe('client api module', () => {
 describe('fetchRankedModels', () => {
     afterEach(() => {
         globalThis.fetch = ORIGINAL_FETCH;
+        setActiveModels(FALLBACK_MODELS.map((m) => m.id));
     });
 
-    it('returns ranked model ids from the server', async () => {
-        globalThis.fetch = async () => new Response(JSON.stringify({
-            models: [{ id: 'a/x:free' }, { id: 'b/y:free' }]
-        }), { status: 200 });
+    it('returns ranked model objects from the server', async () => {
+        globalThis.fetch = async (url) => {
+            assert.match(String(url), /\/api\/models$/);
+            return new Response(JSON.stringify({
+                models: [{ id: 'a/x:free', name: 'X' }, { id: 'b/y:free', name: 'Y' }]
+            }), { status: 200 });
+        };
 
-        const ids = await fetchRankedModels();
-        assert.deepEqual(ids, ['a/x:free', 'b/y:free']);
+        const ranked = await fetchRankedModels();
+        assert.deepEqual(ranked.map((m) => m.id), ['a/x:free', 'b/y:free']);
+    });
+
+    it('passes images=1 when requested', async () => {
+        globalThis.fetch = async (url) => {
+            assert.match(String(url), /images=1/);
+            return new Response(JSON.stringify({
+                models: [{ id: 'vision/x:free' }]
+            }), { status: 200 });
+        };
+        const ranked = await fetchRankedModels({ hasImages: true });
+        assert.equal(ranked[0].id, 'vision/x:free');
     });
 
     it('returns null when the check fails', async () => {
@@ -88,12 +104,11 @@ describe('fetchRankedModels', () => {
         assert.equal(await fetchRankedModels(), null);
     });
 
-    it('setActiveModels keeps live :free ids in order and drops non-free', () => {
-        const [first, second] = SUPPORTED_MODELS.map((m) => m.id);
-        setActiveModels(['hack/not-real:free', second, 'paid/model']);
-        assert.deepEqual(getModels(), ['hack/not-real:free', second]);
-        setActiveModels(SUPPORTED_MODELS.map((m) => m.id)); // restore
-        assert.equal(getModels()[0], first);
+    it('setActiveModels keeps live :free ids and openrouter/free', () => {
+        setActiveModels(['hack/not-real:free', 'openrouter/free', 'paid/model']);
+        assert.deepEqual(getModels(), ['hack/not-real:free', 'openrouter/free']);
+        setActiveModels(FALLBACK_MODELS.map((m) => m.id));
+        assert.equal(getModels()[0], FALLBACK_MODELS[0].id);
     });
 });
 
