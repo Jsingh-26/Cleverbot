@@ -1,4 +1,4 @@
-import { CHAT_ENDPOINT, MODELS_ENDPOINT, getModels } from './config';
+import { CHAT_ENDPOINT, MODELS_ENDPOINT, getModels, setActiveModels } from './config';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -15,7 +15,14 @@ const readErrorMessage = async (response: Response) => {
   return `Request failed with HTTP ${response.status}`;
 };
 
-export type ChatMessage = { role: 'user' | 'assistant' | 'system'; content: string };
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } };
+
+export type ChatMessage = {
+  role: 'user' | 'assistant' | 'system';
+  content: string | ContentPart[];
+};
 
 export type ApiRequestResult =
   | { success: true; response: Response; modelId: string }
@@ -27,31 +34,74 @@ export type ApiRequestResult =
       aborted?: boolean;
     };
 
-export const fetchRankedModels = async (): Promise<string[] | null> => {
+export type RankedModel = {
+  id: string;
+  name?: string;
+  provider?: string;
+  contextLength?: number | null;
+  inputModalities?: string[];
+};
+
+/** Fetch live ranked free models. Pass hasImages to prefer vision-capable ones. */
+export const fetchRankedModels = async (
+  opts: { hasImages?: boolean } = {},
+): Promise<RankedModel[] | null> => {
   try {
-    const response = await fetch(MODELS_ENDPOINT, {
+    const url = opts.hasImages
+      ? `${MODELS_ENDPOINT}?images=1`
+      : MODELS_ENDPOINT;
+    const response = await fetch(url, {
       headers: { Accept: 'application/json' },
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
-    const ids = Array.isArray(data?.models) ? data.models.map((m: { id: string }) => m.id) : [];
-    return ids.length ? ids : null;
+    const models = Array.isArray(data?.models) ? data.models : [];
+    const ranked: RankedModel[] = models
+      .filter((m: { id?: string }) => typeof m?.id === 'string')
+      .map((m: RankedModel) => ({
+        id: m.id,
+        name: m.name,
+        provider: m.provider,
+        contextLength: m.contextLength ?? null,
+        inputModalities: m.inputModalities,
+      }));
+    return ranked.length ? ranked : null;
   } catch (error) {
     console.warn('Model availability check failed:', (error as Error).message);
     return null;
   }
 };
 
+/** Refresh session model order from /api/models and apply it. */
+export const refreshSessionModels = async (opts: { hasImages?: boolean } = {}) => {
+  const ranked = await fetchRankedModels(opts);
+  if (ranked?.length) {
+    setActiveModels(
+      ranked.map((m) => m.id),
+      ranked,
+    );
+    return ranked.map((m) => m.id);
+  }
+  return getModels();
+};
+
 export const makeApiRequest = async (
   messages: ChatMessage[],
   modelIndex: number,
-  { maxRetries = 2, signal, temperature = 0.7 }: {
+  {
+    maxRetries = 2,
+    signal,
+    temperature = 0.7,
+    models,
+  }: {
     maxRetries?: number;
     signal?: AbortSignal;
     temperature?: number;
+    models?: string[];
   } = {},
 ): Promise<ApiRequestResult> => {
-  const modelId = getModels()[modelIndex];
+  const list = models && models.length ? models : getModels();
+  const modelId = list[modelIndex];
   if (!modelId) {
     return { success: false, error: `No model configured at index ${modelIndex}` };
   }
