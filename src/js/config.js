@@ -1,84 +1,48 @@
-// API Configuration
-export const API_URL = window.ENV?.API_URL || 'https://openrouter.ai/api/v1/chat/completions';
+// Client-side configuration.
+//
+// There is deliberately NO API key here. The browser only talks to the
+// same-origin serverless functions below, which hold the OpenRouter key on
+// the server (netlify/functions/chat.mjs).
 
-// Load API key from environment variable
-const getApiKey = () => {
-    if (!window.ENV) {
-        console.error('Environment variables not loaded. Please check env.js');
-        return null;
-    }
+export const CHAT_ENDPOINT = '/api/chat';
+export const MODELS_ENDPOINT = '/api/models';
 
-    const apiKey = window.ENV.OPENROUTER_API_KEY;
-    if (!apiKey) {
-        console.error('API key not found in environment variables');
-        return null;
-    }
-
-    if (!apiKey.startsWith('sk-or-')) {
-        console.error('Invalid API key format. Must start with sk-or-');
-        return null;
-    }
-
-    console.log('API key loaded successfully');
-    return apiKey;
-};
-
-const apiKey = getApiKey();
-if (!apiKey) {
-    console.error('No valid API key available. Application will not function correctly.');
-} else {
-    // Only log the first and last 4 characters for security
-    const maskedKey = apiKey.substring(0, 4) + '...' + apiKey.substring(apiKey.length - 4);
-    console.log('API key (masked):', maskedKey);
-}
-
-export const API_KEY = apiKey;
-
-// Model Configuration
-export const MODELS = [
-    'google/gemini-2.0-pro-exp-02-05:free',  // Best overall free model
-    'mistralai/mistral-7b-instruct:free'     // Reliable backup model
+// Supported models in preference order (best first). This curated order is
+// our definition of "best"; at page load it gets filtered against live
+// OpenRouter availability (see netlify/functions/models.mjs), so the actual
+// #1 changes with whatever is healthy right now.
+//
+// Keep ids in sync with the functions in netlify/functions/.
+export const SUPPORTED_MODELS = [
+    { id: 'google/gemini-2.0-pro-exp-02-05:free', name: 'Gemini Pro Exp', provider: 'Google' },
+    { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash', provider: 'Google' },
+    { id: 'google/gemini-exp-1206:free', name: 'Gemini Exp 1206', provider: 'Google' },
+    { id: 'meta-llama/llama-3.2-3b-instruct:free', name: 'Llama 3.2 3B', provider: 'Meta' },
+    { id: 'mistralai/mistral-7b-instruct:free', name: 'Mistral 7B', provider: 'MistralAI' },
+    { id: 'qwen/qwen-2-7b-instruct:free', name: 'Qwen 2 7B', provider: 'Qwen' },
+    { id: 'huggingfaceh4/zephyr-7b-beta:free', name: 'Zephyr 7B', provider: 'HuggingFace' },
+    { id: 'openchat/openchat-7b:free', name: 'OpenChat 7B', provider: 'OpenChat' }
 ];
 
-// Model metadata for UI display and features
-export const MODEL_INFO = {
-    'google/gemini-2.0-pro-exp-02-05:free': {
-        name: 'Gemini Pro',
-        provider: 'Google',
-        description: 'Latest Gemini model with excellent performance',
-        contextLength: 128000,
-        isCodeCapable: true
-    },
-    'mistralai/mistral-7b-instruct:free': {
-        name: 'Mistral 7B',
-        provider: 'MistralAI',
-        description: 'Reliable open-source model',
-        contextLength: 8192,
-        isCodeCapable: true
-    }
+// The model chain actually used by the app (full list by default; reordered
+// at startup by setActiveModels once live availability is known).
+let activeModelIds = SUPPORTED_MODELS.map((m) => m.id);
+
+export const setActiveModels = (ids) => {
+    const known = new Set(SUPPORTED_MODELS.map((m) => m.id));
+    const valid = (Array.isArray(ids) ? ids : []).filter((id) => known.has(id));
+    if (valid.length > 0) activeModelIds = [...valid];
 };
 
-// Helper functions for model management
-export const getModelInfo = (modelId) => MODEL_INFO[modelId] || {
-    name: modelId.split('/')[1],
-    provider: modelId.split('/')[0],
-    description: 'Model information not available',
-    contextLength: 4096,
-    isCodeCapable: false
-};
+export const getModels = () => [...activeModelIds];
+
+export const getModelInfo = (modelId) =>
+    SUPPORTED_MODELS.find((m) => m.id === modelId) || (() => {
+        const [provider = 'Unknown', name = modelId] = (modelId || '').split('/');
+        return { id: modelId, name, provider };
+    })();
 
 export const formatModelName = (modelId) => {
     const info = getModelInfo(modelId);
     return `${info.provider} - ${info.name}`;
 };
-
-// Log available models and configuration
-console.log('Configuration loaded:', {
-    apiUrl: API_URL,
-    hasApiKey: !!API_KEY,
-    models: MODELS.map(id => ({
-        id,
-        ...getModelInfo(id)
-    })),
-    environment: window.ENV ? 'production' : 'development'
-}); 

@@ -1,18 +1,13 @@
 {
   "name": "cleverbot",
-  "version": "1.0.0",
-  "description": "AI Chat Assistant using multiple models",
-  "main": "index.html",
+  "version": "2.0.0",
+  "description": "AI chat assistant using the best available free OpenRouter models, proxied through Netlify functions so the API key stays server-side",
+  "type": "module",
   "scripts": {
-    "start": "http-server -c-1 -p 3000",
-    "test": "jest"
-  },
-  "dependencies": {
-    "dotenv": "^16.4.1",
-    "marked": "^15.0.7"
+    "start": "netlify dev",
+    "test": "node --test \"test/*.test.js\""
   },
   "devDependencies": {
-    "http-server": "^14.1.1",
-    "jest": "^29.7.0"
+    "netlify-cli": "^17.0.0"
   }
 }
