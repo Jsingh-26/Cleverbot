@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Cleverbot</string>
+    <string name="title_activity_main">Cleverbot</string>
+    <string name="package_name">com.jsingh26.cleverbot</string>
+    <string name="custom_url_scheme">com.jsingh26.cleverbot</string>
+</resources>
