@@ -35,12 +35,24 @@ const MAX_IMAGE_DATA_URL_CHARS = 7_000_000; // ~5MB binary as base64 data URL
 const MAX_PARTS_PER_MESSAGE = 12;
 const DEFAULT_TEMPERATURE = 0.7;
 
-// Always attach OpenRouter web search. Works with any model (including :free);
-// server tools need tool-calling which many free models lack. Web search uses
-// OpenRouter credits even when the model itself is free.
+// OpenRouter web search works with any model, but costs credits even with a free model.
+// Attach it only when the latest request explicitly asks for search or needs current facts.
 const WEB_SEARCH_PLUGIN = {
     id: 'web',
     max_results: 5
+};
+
+/** Use paid web search only when the latest user request asks for it or needs current facts. */
+export const needsWebSearch = (messages) => {
+    const latestUser = [...messages].reverse().find((message) => message?.role === 'user');
+    if (!latestUser) return false;
+    const content = latestUser.content;
+    const text = typeof content === 'string'
+        ? content
+        : Array.isArray(content)
+            ? content.filter((part) => part?.type === 'text').map((part) => part.text).join(' ')
+            : '';
+    return /\b(search (?:the )?web|web search|look (?:it|this|that) up|browse (?:the )?web|find online|latest|current|currently|today|tonight|tomorrow|yesterday|this (?:week|month|year)|recent|recently|news|weather|forecast|live score|stock price|exchange rate|price (?:right )?now|who is (?:the )?(?:current|president|prime minister|ceo))\b/i.test(text);
 };
 
 const jsonResponse = (status, payload) =>
@@ -244,6 +256,8 @@ export default async (request) => {
     }
     const modelId = resolved.modelId;
 
+    const useWebSearch = needsWebSearch(messages);
+
     let upstream;
     try {
         upstream = await fetch(OPENROUTER_URL, {
@@ -259,7 +273,7 @@ export default async (request) => {
                 messages,
                 temperature,
                 stream: true,
-                plugins: [WEB_SEARCH_PLUGIN]
+                ...(useWebSearch ? { plugins: [WEB_SEARCH_PLUGIN] } : {})
             })
         });
     } catch (error) {
@@ -278,6 +292,7 @@ export default async (request) => {
         'X-Model-Id': modelId
     };
     if (resolved.task) headers['X-Task'] = resolved.task;
+    headers['X-Web-Search'] = useWebSearch ? '1' : '0';
 
     return new Response(streamWithModelMeta(upstream.body, modelId), {
         status: 200,
