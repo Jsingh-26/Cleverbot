@@ -31,4 +31,7 @@ yarn-error.log*
 coverage/
 
 # Netlify
-.netlify/ 
+.netlify/
+
+# Convex local
+.convex/

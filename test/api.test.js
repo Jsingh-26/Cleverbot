@@ -1,7 +1,7 @@
 import { describe, it, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeApiRequest, processStream, fetchRankedModels } from '../src/js/api.js';
-import { SUPPORTED_MODELS, setActiveModels, getModels } from '../src/js/config.js';
+import { makeApiRequest, processStream, fetchRankedModels } from '../src/lib/api.ts';
+import { SUPPORTED_MODELS, setActiveModels, getModels } from '../src/lib/config.ts';
 
 const ORIGINAL_FETCH = globalThis.fetch;
 const messages = [{ role: 'user', content: 'hello' }];
@@ -99,7 +99,6 @@ describe('fetchRankedModels', () => {
 
 describe('processStream', () => {
     it('assembles deltas split across chunk boundaries', async () => {
-        // One JSON payload is split mid-line across two chunks:
         const stream = sseStream(
             'data: {"choices":[{"delta":{"content":"Hel',
             'lo"}}]}\n\ndata: {"choices":[{"delta":{"content":" world"}}]}\n\ndata: [DONE]\n\n'
