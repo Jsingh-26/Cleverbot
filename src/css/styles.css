@@ -1285,3 +1285,6 @@ body {
   .starter-grid { grid-template-columns: 1fr; }
   .starter-grid span:nth-child(n+3) { display: none; }
 }
+
+.header-update-btn { border: 1px solid var(--border-color); background: var(--theme-toggle-bg); color: var(--text-color); border-radius: .65rem; padding: .38rem .65rem; font-size: .76rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+@media (max-width: 420px) { .header-update-btn { max-width: 7.5rem; overflow: hidden; text-overflow: ellipsis; } }
