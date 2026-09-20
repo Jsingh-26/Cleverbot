@@ -7,7 +7,12 @@ The private signing key is not stored in this repository. Recovery material is h
 - `CLEVERBOT_KEYSTORE_B64`
 - `CLEVERBOT_KEYSTORE_PASSWORD`
 - `CLEVERBOT_KEY_PASSWORD`
+GitHub environment variables (non-secret):
+
 - `FIREBASE_APP_ID`
-- `FIREBASE_TOKEN`
+- `GCP_WORKLOAD_IDENTITY_PROVIDER`
+- `GCP_SERVICE_ACCOUNT`
+
+The workflow uses short-lived Google credentials through Workload Identity Federation and stores no Firebase refresh token or service-account JSON key.
 
 The alias is `cleverbot-release`. Every release must increment `versionCode`. Use the manual `Build and distribute private Android APK` workflow only after the main branch update is approved.

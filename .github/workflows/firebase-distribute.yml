@@ -8,9 +8,6 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: read
-
 concurrency:
   group: cleverbot-android-release
   cancel-in-progress: false
@@ -19,6 +16,9 @@ jobs:
   distribute:
     runs-on: ubuntu-latest
     environment: android-production
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,6 +30,10 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
       - run: npm ci
       - run: npm test
       - run: npm run build
@@ -49,14 +53,12 @@ jobs:
         run: jarsigner -verify -strict -certs android/app/build/outputs/apk/release/app-release.apk
       - name: Distribute privately to Firebase tester group
         env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
-          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          FIREBASE_APP_ID: ${{ vars.FIREBASE_APP_ID }}
           RELEASE_NOTES: ${{ inputs.release_notes }}
         run: >-
           npx --yes firebase-tools appdistribution:distribute
           android/app/build/outputs/apk/release/app-release.apk
           --app "$FIREBASE_APP_ID"
-          --token "$FIREBASE_TOKEN"
           --groups "owner"
           --release-notes "$RELEASE_NOTES"
       - uses: actions/upload-artifact@v4
