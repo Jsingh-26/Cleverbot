@@ -14,14 +14,18 @@ export const MODELS_ENDPOINT = '/api/models';
 //
 // Keep ids in sync with the functions in netlify/functions/.
 export const SUPPORTED_MODELS = [
-    { id: 'google/gemini-2.0-pro-exp-02-05:free', name: 'Gemini Pro Exp', provider: 'Google' },
-    { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash', provider: 'Google' },
-    { id: 'google/gemini-exp-1206:free', name: 'Gemini Exp 1206', provider: 'Google' },
-    { id: 'meta-llama/llama-3.2-3b-instruct:free', name: 'Llama 3.2 3B', provider: 'Meta' },
-    { id: 'mistralai/mistral-7b-instruct:free', name: 'Mistral 7B', provider: 'MistralAI' },
-    { id: 'qwen/qwen-2-7b-instruct:free', name: 'Qwen 2 7B', provider: 'Qwen' },
-    { id: 'huggingfaceh4/zephyr-7b-beta:free', name: 'Zephyr 7B', provider: 'HuggingFace' },
-    { id: 'openchat/openchat-7b:free', name: 'OpenChat 7B', provider: 'OpenChat' }
+    { id: 'google/gemma-4-31b-it:free', name: 'Gemma 4 31B', provider: 'Google' },
+    { id: 'google/gemma-4-26b-a4b-it:free', name: 'Gemma 4 26B A4B', provider: 'Google' },
+    { id: 'qwen/qwen3.8-27b:free', name: 'Qwen 3.8 27B', provider: 'Qwen' },
+    { id: 'z-ai/glm-5.2:free', name: 'GLM 5.2', provider: 'Z.AI' },
+    { id: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', name: 'Nemotron 3 Nano Omni Reasoning', provider: 'NVIDIA' },
+    { id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron 3 Super 120B', provider: 'NVIDIA' },
+    { id: 'nvidia/nemotron-3.5-lightning:free', name: 'Nemotron 3.5 Lightning', provider: 'NVIDIA' },
+    { id: 'liquid/lfm-2.5-2.6b:free', name: 'LFM 2.5 2.6B', provider: 'Liquid' },
+    { id: 'cohere/north-mini-code:free', name: 'North Mini Code', provider: 'Cohere' },
+    { id: 'thinkingmachines/inkling:free', name: 'Inkling', provider: 'Thinking Machines' },
+    { id: 'thinkingmachines/inkling-small:free', name: 'Inkling Small', provider: 'Thinking Machines' },
+    { id: 'poolside/laguna-s-2.1:free', name: 'Laguna S 2.1', provider: 'Poolside' }
 ];
 
 // The model chain actually used by the app (full list by default; reordered
@@ -29,8 +33,11 @@ export const SUPPORTED_MODELS = [
 let activeModelIds = SUPPORTED_MODELS.map((m) => m.id);
 
 export const setActiveModels = (ids) => {
-    const known = new Set(SUPPORTED_MODELS.map((m) => m.id));
-    const valid = (Array.isArray(ids) ? ids : []).filter((id) => known.has(id));
+    // Prefer curated ids, but also accept any live :free id the /api/models
+    // endpoint returns (OpenRouter rotates free models often).
+    const valid = (Array.isArray(ids) ? ids : []).filter(
+        (id) => typeof id === 'string' && id.endsWith(':free') && id.length < 200
+    );
     if (valid.length > 0) activeModelIds = [...valid];
 };
 

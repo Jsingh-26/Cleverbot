@@ -88,10 +88,10 @@ describe('fetchRankedModels', () => {
         assert.equal(await fetchRankedModels(), null);
     });
 
-    it('setActiveModels filters out unknown ids and keeps order', () => {
+    it('setActiveModels keeps live :free ids in order and drops non-free', () => {
         const [first, second] = SUPPORTED_MODELS.map((m) => m.id);
-        setActiveModels(['hack/not-real:free', second]);
-        assert.deepEqual(getModels(), [second]);
+        setActiveModels(['hack/not-real:free', second, 'paid/model']);
+        assert.deepEqual(getModels(), ['hack/not-real:free', second]);
         setActiveModels(SUPPORTED_MODELS.map((m) => m.id)); // restore
         assert.equal(getModels()[0], first);
     });

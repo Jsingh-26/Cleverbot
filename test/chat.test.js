@@ -4,7 +4,7 @@ import handler from '../netlify/functions/chat.mjs';
 
 const ORIGINAL_FETCH = globalThis.fetch;
 const ORIGINAL_KEY = process.env.OPENROUTER_API_KEY;
-const ALLOWED_MODEL = 'mistralai/mistral-7b-instruct:free';
+const ALLOWED_MODEL = 'google/gemma-4-31b-it:free';
 
 const makeRequest = (body, method = 'POST') =>
     new Request('https://example.net/api/chat', {
