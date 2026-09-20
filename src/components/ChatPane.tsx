@@ -15,12 +15,12 @@ import {
   revokeAttachmentPreviews,
   type ChatAttachment,
 } from '../lib/attachments';
-import { useVoiceMode } from '../hooks/useVoiceMode';
 import { ChatInput } from './ChatInput';
 import { HeaderAuth } from './HeaderAuth';
 import { MessageBubble, ThinkingIndicator, type LocalMessage } from './MessageBubble';
 import { ThemeToggle } from './ThemeToggle';
 import { useTheme } from '../hooks/useTheme';
+import { requestsHtmlFile } from '../lib/fileIntent';
 
 const MAX_HISTORY_MESSAGES = 24;
 
@@ -52,12 +52,19 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
     if (!isAuthenticated || !activeThreadId) {
       return localMessages;
     }
-    const remote = (remoteMessages ?? []).map((m) => ({
-      id: m._id,
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-      modelId: m.modelId,
-    }));
+    let previousUserRequestedHtml = false;
+    const remote = (remoteMessages ?? []).map((m) => {
+      const requestedFile =
+        m.role === 'assistant' && previousUserRequestedHtml ? ('html' as const) : undefined;
+      if (m.role === 'user') previousUserRequestedHtml = requestsHtmlFile(m.content);
+      return {
+        id: m._id,
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+        modelId: m.modelId,
+        requestedFile,
+      };
+    });
     const remoteIds = new Set(remote.map((m) => m.content + m.role));
     const pending = localMessages.filter((m) => {
       if (m.role === 'error') return true;
@@ -105,6 +112,7 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
       const persistContent = buildPersistContent(text, attachments);
       const apiContent = buildApiContent(text, attachments);
       const hasImages = attachments.some((a) => a.kind === 'image');
+      const requestedFile = requestsHtmlFile(text) ? ('html' as const) : undefined;
 
       const userMsg: LocalMessage = {
         id: `local-user-${Date.now()}`,
@@ -180,6 +188,7 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
               content: '',
               modelId: usedModelId,
               streaming: true,
+              requestedFile,
             },
           ]);
 
@@ -283,30 +292,9 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
     ],
   );
 
-  const onVoiceAutoSend = useCallback(
-    (utterance: string) => sendMessage(utterance, []),
-    [sendMessage],
-  );
-
-  const voice = useVoiceMode({ onAutoSend: onVoiceAutoSend });
-
-  const voiceTitle = !voice.supported
-    ? 'Voice mode is not supported in this browser'
-    : voice.active
-      ? 'Stop voice mode'
-      : 'Start voice mode';
-
-  const voicePhaseLabel =
-    voice.phase === 'listening'
-      ? 'Listening'
-      : voice.phase === 'thinking'
-        ? 'Thinking'
-        : voice.phase === 'speaking'
-          ? 'Speaking'
-          : null;
 
   return (
-    <div className={`chat-pane${voice.active ? ' chat-pane--voice' : ''}`}>
+    <div className="chat-pane">
       <header className="header" role="banner">
         <div className="header-leading">
           {isAuthenticated ? (
@@ -320,39 +308,6 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
           )}
         </div>
         <div className="header-actions">
-          <button
-            type="button"
-            className={`voice-mode-btn${voice.active ? ' voice-mode-btn--active' : ''}`}
-            aria-label={voiceTitle}
-            aria-pressed={voice.active}
-            title={voiceTitle}
-            disabled={!voice.supported}
-            onClick={voice.toggle}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-              <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
-              <path d="M19 10v2a7 7 0 01-14 0v-2" />
-              <line x1="12" y1="19" x2="12" y2="23" />
-              <line x1="8" y1="23" x2="16" y2="23" />
-            </svg>
-            <span className="voice-mode-btn-label">Voice</span>
-            {voice.active && voicePhaseLabel && (
-              <span className="voice-mode-phase" aria-live="polite">
-                {voicePhaseLabel}
-              </span>
-            )}
-          </button>
-          {voice.active && (
-            <button
-              type="button"
-              className="voice-stop-btn"
-              onClick={voice.exit}
-              title="Stop voice mode (Esc)"
-              aria-label="Stop voice mode"
-            >
-              Stop
-            </button>
-          )}
           <HeaderAuth onRequestLogin={onRequestLogin} />
           <ThemeToggle resolved={resolved} onToggle={toggleTheme} />
         </div>
@@ -366,12 +321,6 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
           {thinking && <ThinkingIndicator />}
         </div>
       </div>
-
-      {voice.error && (
-        <p className="voice-mode-error" role="alert">
-          {voice.error}
-        </p>
-      )}
 
       <ChatInput
         disabled={isProcessing}

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { formatModelName } from '../lib/config';
-import { downloadMessageAsHtml, downloadMessageAsMarkdown } from '../lib/exportMessage';
+import { downloadMessageAsHtml } from '../lib/exportMessage';
 import { highlightCodeBlocks, safeMarkdown } from '../lib/markdown';
 
 export type LocalMessage = {
@@ -9,6 +9,7 @@ export type LocalMessage = {
   content: string;
   modelId?: string | null;
   streaming?: boolean;
+  requestedFile?: 'html';
 };
 
 type Props = {
@@ -18,8 +19,11 @@ type Props = {
 export function MessageBubble({ message }: Props) {
   const contentRef = useRef<HTMLDivElement>(null);
   const type = message.role === 'assistant' ? 'bot' : message.role;
-  const showDownloads =
-    message.role === 'assistant' && !message.streaming && message.content.trim().length > 0;
+  const showHtmlFile =
+    message.role === 'assistant' &&
+    !message.streaming &&
+    message.requestedFile === 'html' &&
+    message.content.trim().length > 0;
 
   useEffect(() => {
     const el = contentRef.current;
@@ -55,31 +59,19 @@ export function MessageBubble({ message }: Props) {
               </div>
             </div>
           )}
-          {showDownloads && (
-            <div className="message-actions" role="group" aria-label="Download reply">
+          {showHtmlFile && (
+            <div className="message-actions" role="group" aria-label="Requested file">
               <button
                 type="button"
                 className="msg-dl-btn"
-                title="Download as Markdown"
-                aria-label="Download as Markdown"
-                onClick={() => downloadMessageAsMarkdown(message.content)}
-              >
-                <span className="msg-dl-icon" aria-hidden="true">
-                  MD
-                </span>
-                <span className="msg-dl-label">.md</span>
-              </button>
-              <button
-                type="button"
-                className="msg-dl-btn"
-                title="Download as HTML"
-                aria-label="Download as HTML"
+                title="Download requested HTML file"
+                aria-label="Download requested HTML file"
                 onClick={() => downloadMessageAsHtml(message.content)}
               >
                 <span className="msg-dl-icon" aria-hidden="true">
                   HTML
                 </span>
-                <span className="msg-dl-label">.html</span>
+                <span className="msg-dl-label">Download file</span>
               </button>
             </div>
           )}

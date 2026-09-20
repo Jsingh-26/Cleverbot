@@ -30,6 +30,7 @@ signed-in users also write threads/messages to Convex after each reply
 
 - **Vite + React + TypeScript** SPA with theme toggle (light / dark / system)
 - **Streaming markdown** chat (marked + DOMPurify + highlight.js)
+- **On-demand HTML files** only when a user explicitly asks for an HTML file
 - **Best-available free model** ranking via `/api/models`
 - **Web search by default** in `netlify/functions/chat.mjs`
 - **Convex** as auth + database (password + anonymous)
