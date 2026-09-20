@@ -1,60 +1,88 @@
-# Cleverbot - AI Chat Assistant
+# Cleverbot — AI Chat Assistant
 
-A web-based AI chat assistant that uses multiple AI models through OpenRouter API to provide intelligent responses to any question.
+A static web chat app that talks to free AI models on OpenRouter — through
+Netlify serverless functions so the **API key never reaches the browser**.
+
+## Architecture
+
+```
+browser ──GET  /api/models──▶ Netlify Function ──▶ OpenRouter /models (live availability)
+browser ──POST /api/chat────▶ Netlify Function ──Bearer key──▶ OpenRouter /chat/completions
+browser ◀────── SSE stream ────────────────────────────────
+```
+
+- The OpenRouter key is stored as the `OPENROUTER_API_KEY` environment
+  variable in Netlify (never committed, never sent to the client).
+- `netlify/functions/models.mjs` ranks the supported models by what OpenRouter
+  reports as currently live, so the "best" model is re-evaluated on every
+  page refresh.
+- `netlify/functions/chat.mjs` validates requests (model allowlist, message
+  shape, size limits) and streams the response back unchanged.
 
 ## Features
 
-- **Multiple AI Models**: Uses 26 different AI models in order of preference
-- **Automatic Fallback**: If one model fails, automatically tries the next one
-- **Simple Interface**: Clean and intuitive chat interface
-- **Real-time Responses**: Stream responses as they are generated
-- **Error Handling**: Graceful error handling with automatic model switching
+- **Best-available model selection**: on every page load the app queries live
+  model availability and orders the fallback chain best-first.
+- **Model fallback chain**: transient failures retry with exponential backoff;
+  permanent failures fall back to the next model.
+- **Streaming responses** rendered as sanitized markdown (marked + DOMPurify).
+- **Conversation context**: recent history is sent with each request.
+- **Syntax highlighting** in code blocks (highlight.js).
+- **Light / dark / system themes**, persisted in localStorage.
 
-## Models Used (in order of preference)
+## Security
 
-1. Google Gemini Models
-   - Gemini Exp 1206
-   - Gemini 2.0 Flash
-   - Various other Gemini variants
-
-2. Meta Llama Models
-   - Llama 3.2 13B Vision
-   - Multiple Llama variants
-
-3. Other Models
-   - Qwen 4.7B
-   - Mistral 7B
-   - Microsoft Phi-3
-   - OpenChat 7B
-   - And more...
+- API key is server-side only (`netlify/functions/chat.mjs`).
+- The function validates the model against an allowlist and caps payload
+  size, so it can't be abused as an open OpenRouter proxy.
+- Model output is sanitized with DOMPurify before it ever touches `innerHTML`.
+- Content Security Policy with no `unsafe-inline` scripts (see `netlify.toml`).
 
 ## Setup
 
-1. Clone the repository
-2. Add your OpenRouter API key in the `script.js` file
-3. Open `index.html` in a browser or deploy to a web server
+1. `npm install`
+2. Get a key at [openrouter.ai/keys](https://openrouter.ai/keys).
+3. Configure the key:
+   - **Netlify**: Site settings → Environment variables → `OPENROUTER_API_KEY`
+   - **Local dev**: create a `.env` file with `OPENROUTER_API_KEY=sk-or-...`
+     (git-ignored; `netlify dev` loads it automatically)
+4. `npm start` (runs `netlify dev`) → http://localhost:8888
 
-## Usage
+Unit tests (no server needed): `npm test` — Node's built-in test runner.
 
-1. Open the application in your web browser
-2. Type your question in the input field
-3. Press Enter or click Send
-4. The app will automatically use the best available model to answer your question
+## Deploying
 
-## Technologies Used
+Push to your repo and import the project in Netlify, or run `netlify deploy`.
+There is no build step — the site is static; only the functions are bundled.
 
-- HTML5
-- CSS3
-- JavaScript
-- OpenRouter API for AI models
+## Adding / ranking a model
 
-## Error Handling
+1. Add its id to `SUPPORTED_MODELS` in `src/js/config.js`
+   (order = preference = fallback priority).
+2. Add the same entry to `SUPPORTED` in `netlify/functions/models.mjs` and to
+   `ALLOWED_MODELS` in `netlify/functions/chat.mjs`.
 
-The application implements a robust error handling system:
-- If a model fails (rate limit, quota exceeded, etc.), it automatically tries the next model
-- Only shows an error if all models have failed
-- Provides clear feedback during the process
+At runtime the list is automatically filtered to models that are live on
+OpenRouter, so stale entries are simply skipped.
+
+## Project structure
+
+```
+index.html                     markup + CDN libraries (marked, hljs, DOMPurify)
+src/
+  css/styles.css               theme-aware styles
+  js/main.js                   entry point (loads live model ranking)
+  js/app.js                    send/fallback flow, chat history
+  js/api.js                    fetch + SSE stream parsing
+  js/ui.js                     rendering, sanitization, throttled streaming
+  js/config.js                 model preference list (no secrets!)
+  js/theme.js                  theme switcher
+netlify/functions/chat.mjs     chat proxy (holds the API key)
+netlify/functions/models.mjs   live model availability ranking
+test/                          node:test suites
+netlify.toml                   redirects, security headers, CSP
+```
 
 ## License
 
-MIT License 
+MIT

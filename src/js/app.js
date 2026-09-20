@@ -1,130 +1,119 @@
-import { MODELS } from './config.js';
+import { getModels } from './config.js';
 import { makeApiRequest, processStream } from './api.js';
 import { ui } from './ui.js';
 
-// State management
-let isProcessing = false;
-let lastUserMessage = '';
-let currentModelIndex = 0;
+// How many past messages to send as conversation context
+const MAX_HISTORY_MESSAGES = 24;
 
-// Message history management
+let isProcessing = false;
+
+// In-memory chat history: [{ message, type: 'user'|'bot', modelId, timestamp }]
 const messageHistory = [];
-const saveMessage = (message, type) => {
-    messageHistory.push({ 
-        message, 
-        type, 
-        timestamp: Date.now() 
-    });
+
+const saveMessage = (message, type, modelId = null) => {
+    messageHistory.push({ message, type, modelId, timestamp: Date.now() });
 };
 
-// Main message handling function
-async function sendMessage(message = null, startFromModel = 0) {
-    if (isProcessing) return;
-    
-    const userMessage = message || ui.getInputValue();
-    
-    if (!userMessage) return;
-    
+// Convert saved history into OpenRouter message format (capped).
+const buildConversation = () =>
+    messageHistory
+        .filter((entry) => entry.type === 'user' || entry.type === 'bot')
+        .slice(-MAX_HISTORY_MESSAGES)
+        .map((entry) => ({
+            role: entry.type === 'user' ? 'user' : 'assistant',
+            content: entry.message
+        }));
+
+// Send the current input message, falling back through the (dynamically
+// ordered) model chain.
+async function sendMessage() {
+    const userMessage = ui.getInputValue();
+    if (!userMessage || isProcessing) return;
+
     isProcessing = true;
-    lastUserMessage = userMessage;
-    currentModelIndex = startFromModel;
-    
+    ui.setInputState(false);
+
     let thinkingIndicator = null;
-    
+    let botWrapper = null;
+
     try {
-        ui.setInputState(false);
-        
-        if (!message) {
-            ui.appendMessage(userMessage, 'user');
-            saveMessage(userMessage, 'user');
-            ui.clearInput();
-        }
-        
+        ui.appendMessage(userMessage, 'user');
+        saveMessage(userMessage, 'user');
+        ui.clearInput();
+
         thinkingIndicator = ui.appendThinkingIndicator();
-        let responseReceived = false;
-        
-        for (let i = startFromModel; i < MODELS.length; i++) {
-            currentModelIndex = i;
-            console.log(`Trying model: ${MODELS[i]}`);
-            
-            const { success, response, error } = await makeApiRequest(userMessage, i);
-            
+        const messages = buildConversation();
+        const models = getModels(); // snapshot: best-first as of page load
+
+        for (let i = 0; i < models.length; i++) {
+            const { success, response, error } = await makeApiRequest(messages, i);
+
             if (!success) {
-                console.error(`Error with model ${MODELS[i]}:`, error);
-                if (i === MODELS.length - 1) {
-                    if (thinkingIndicator) {
-                        thinkingIndicator.remove();
-                        thinkingIndicator = null;
-                    }
-                    ui.appendMessage('Error: Unable to get response from any available model. Please try again later.', 'error');
-                }
-                continue;
+                console.warn(`Model ${models[i]} failed:`, error);
+                continue; // fall back to the next model
             }
-            
+
+            if (thinkingIndicator) {
+                thinkingIndicator.remove();
+                thinkingIndicator = null;
+            }
+
+            botWrapper = ui.appendMessage('', 'bot', models[i]);
+            const botMessageEl = botWrapper.querySelector('.message');
+            let rawResponse = '';
+
             try {
-                if (thinkingIndicator) {
-                    thinkingIndicator.remove();
-                    thinkingIndicator = null;
-                }
-                
-                const botMessageElement = ui.appendMessage('', 'bot', MODELS[i]);
-                responseReceived = false;
-                
-                await processStream(response, (content) => {
-                    responseReceived = true;
-                    if (botMessageElement.querySelector('.message')) {
-                        botMessageElement.querySelector('.message').textContent += content;
-                    }
-                    ui.scrollToBottom();
+                const { received } = await processStream(response, (content) => {
+                    rawResponse += content;
+                    ui.renderMessageContent(botMessageEl, rawResponse, { streaming: true });
                 });
-                
-                if (!responseReceived) {
-                    throw new Error('No content received from stream');
+
+                if (!received || !rawResponse.trim()) {
+                    throw new Error('Model returned an empty response');
                 }
-                
-                saveMessage(botMessageElement.querySelector('.message').textContent, 'bot');
-                break;
+
+                // Final render: markdown + sanitization + syntax highlighting
+                ui.renderMessageContent(botMessageEl, rawResponse, { streaming: false });
+                saveMessage(rawResponse, 'bot', models[i]);
+                return; // done
             } catch (streamError) {
-                console.error('Error processing stream:', streamError);
-                if (i === MODELS.length - 1) {
-                    ui.appendMessage('Error: Failed to process the response. Please try again.', 'error');
-                }
-                continue;
+                console.warn(`Stream from ${models[i]} failed:`, streamError.message);
+                botWrapper?.remove();
+                botWrapper = null;
+                // fall through and try the next model
             }
         }
+
+        // Every model failed or returned nothing
+        ui.appendMessage(
+            'Error: Unable to get a response from any available model. Please try again later.',
+            'error'
+        );
     } catch (error) {
-        console.error('Error:', error);
-        if (thinkingIndicator) {
-            thinkingIndicator.remove();
-        }
+        console.error('Unexpected error in sendMessage:', error);
+        botWrapper?.remove();
         ui.appendMessage('An unexpected error occurred. Please try again.', 'error');
     } finally {
         isProcessing = false;
         ui.setInputState(true);
-        if (thinkingIndicator) {
-            thinkingIndicator.remove();
-        }
+        ui.focusInput();
+        thinkingIndicator?.remove();
     }
 }
 
-// Event listeners
+// Event listeners (module scripts are deferred; DOMContentLoaded fires after
+// this code runs, so registering here is safe).
 document.addEventListener('DOMContentLoaded', () => {
-    // Input event for enabling/disabling send button
-    ui.chatInput.addEventListener('input', () => {
-        ui.updateSendButtonState();
-    });
-    
-    // Enter key press
+    ui.chatInput.addEventListener('input', () => ui.updateSendButtonState());
+
     ui.chatInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             sendMessage();
         }
     });
-    
-    // Send button click
+
     ui.sendButton.addEventListener('click', () => sendMessage());
 });
 
-// Export functions for external use
-export { sendMessage, messageHistory }; 
+export { sendMessage, messageHistory };
