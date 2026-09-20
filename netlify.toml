@@ -1,5 +1,6 @@
 [build]
-  publish = "."
+  command = "npm run build"
+  publish = "dist"
   functions = "netlify/functions"
 
 [functions]
@@ -7,6 +8,13 @@
 
 [build.environment]
   NODE_VERSION = "22"
+
+[dev]
+  command = "npm run dev"
+  targetPort = 5173
+  port = 8888
+  autoLaunch = false
+  framework = "#custom"
 
 # Route /api/* to serverless functions. Must come BEFORE the SPA catch-all.
 [[redirects]]
@@ -28,11 +36,11 @@
     Referrer-Policy = "strict-origin-when-cross-origin"
     Content-Security-Policy = """
       default-src 'self';
-      script-src 'self' https://cdn.jsdelivr.net;
-      style-src 'self' https://fonts.googleapis.com https://cdn.jsdelivr.net;
+      script-src 'self';
+      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
       font-src 'self' https://fonts.gstatic.com data:;
       img-src 'self' data: https:;
-      connect-src 'self';
+      connect-src 'self' https://*.convex.cloud https://*.convex.site wss://*.convex.cloud;
       frame-src 'none';
       object-src 'none';
       base-uri 'self';
