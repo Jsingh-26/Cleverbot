@@ -25,7 +25,17 @@ export default function App() {
 
   useEffect(() => {
     if (isAuthenticated) setLoginOpen(false);
+    else setSidebarOpen(false);
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSidebarOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [sidebarOpen]);
 
   const handleNewChat = useCallback(() => {
     setActiveThreadId(null);
@@ -45,27 +55,40 @@ export default function App() {
   const closeLogin = useCallback(() => setLoginOpen(false), []);
 
   return (
-    <div className={`app-shell${sidebarOpen ? ' sidebar-open' : ''}`}>
-      <button
-        type="button"
-        className="sidebar-toggle"
-        aria-label="Toggle chat history"
-        onClick={() => setSidebarOpen((v) => !v)}
-      >
-        ☰
-      </button>
-      <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} aria-hidden="true" />
-      <Sidebar
-        activeThreadId={activeThreadId}
-        onSelectThread={handleSelectThread}
-        onNewChat={handleNewChat}
-        onRequestLogin={openLogin}
-      />
+    <div
+      className={`app-shell${isAuthenticated ? ' app-shell--authed' : ' app-shell--guest'}${
+        sidebarOpen ? ' sidebar-open' : ''
+      }`}
+    >
+      {isAuthenticated && (
+        <>
+          <button
+            type="button"
+            className="sidebar-toggle"
+            aria-label="Toggle chat history"
+            aria-expanded={sidebarOpen}
+            onClick={() => setSidebarOpen((v) => !v)}
+          >
+            ☰
+          </button>
+          <div
+            className="sidebar-backdrop"
+            onClick={() => setSidebarOpen(false)}
+            aria-hidden="true"
+          />
+          <Sidebar
+            activeThreadId={activeThreadId}
+            onSelectThread={handleSelectThread}
+            onNewChat={handleNewChat}
+          />
+        </>
+      )}
       <ChatPane
         key={isAuthenticated ? String(activeThreadId) : `guest-${guestEpoch}`}
         activeThreadId={activeThreadId}
         onThreadCreated={(id) => setActiveThreadId(id)}
         onRequestLogin={openLogin}
+        onNewChat={handleNewChat}
       />
       <AuthOverlay open={loginOpen} onClose={closeLogin} />
     </div>

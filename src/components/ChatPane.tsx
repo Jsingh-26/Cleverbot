@@ -27,11 +27,12 @@ type Props = {
   activeThreadId: Id<'threads'> | null;
   onThreadCreated: (id: Id<'threads'>) => void;
   onRequestLogin: () => void;
+  onNewChat: () => void;
 };
 
-export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin }: Props) {
+export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNewChat }: Props) {
   const { isAuthenticated } = useConvexAuth();
-  const { preference, resolved, setTheme } = useTheme();
+  const { resolved, toggleTheme } = useTheme();
   const createThread = useMutation(api.threads.createThread);
   const appendMessage = useMutation(api.messages.appendMessage);
 
@@ -242,10 +243,20 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin }: Pr
   return (
     <div className="chat-pane">
       <header className="header" role="banner">
-        <div className="header-spacer" />
+        <div className="header-leading">
+          {isAuthenticated ? (
+            <button type="button" className="header-new-chat-btn" onClick={onNewChat}>
+              New chat
+            </button>
+          ) : (
+            <div className="header-brand logo" aria-hidden="true">
+              Cleverbot
+            </div>
+          )}
+        </div>
         <div className="header-actions">
           <HeaderAuth onRequestLogin={onRequestLogin} />
-          <ThemeToggle preference={preference} resolved={resolved} onChange={setTheme} />
+          <ThemeToggle resolved={resolved} onToggle={toggleTheme} />
         </div>
       </header>
 

@@ -1,4 +1,4 @@
-import { FormEvent, useRef, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import {
   type ChatAttachment,
   loadAttachment,
@@ -10,17 +10,73 @@ type Props = {
   onSend: (text: string, attachments: ChatAttachment[]) => void;
 };
 
+type SpeechRecognitionLike = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
+  onend: (() => void) | null;
+};
+
+type SpeechRecognitionEventLike = {
+  resultIndex: number;
+  results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>;
+};
+
+function getSpeechRecognitionCtor(): (new () => SpeechRecognitionLike) | null {
+  const w = window as Window & {
+    SpeechRecognition?: new () => SpeechRecognitionLike;
+    webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+  };
+  return w.SpeechRecognition || w.webkitSpeechRecognition || null;
+}
+
 export function ChatInput({ disabled, onSend }: Props) {
   const [value, setValue] = useState('');
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [speechSupported] = useState(() => Boolean(getSpeechRecognitionCtor()));
+  const imageRef = useRef<HTMLInputElement>(null);
+  const textRef = useRef<HTMLInputElement>(null);
+  const attachMenuRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const baseValueRef = useRef('');
 
   const canSend = (value.trim().length > 0 || attachments.length > 0) && !disabled;
+
+  useEffect(() => {
+    if (!attachMenuOpen) return;
+    const onClick = (e: MouseEvent) => {
+      if (!attachMenuRef.current?.contains(e.target as Node)) setAttachMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setAttachMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [attachMenuOpen]);
+
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.abort();
+      recognitionRef.current = null;
+    };
+  }, []);
 
   const submit = (e?: FormEvent) => {
     e?.preventDefault();
     if (!canSend) return;
+    if (listening) stopListening();
     const text = value.trim();
     const pending = attachments;
     onSend(text, pending);
@@ -49,8 +105,94 @@ export function ChatInput({ disabled, onSend }: Props) {
       }
     }
     if (next.length) setAttachments((prev) => [...prev, ...next].slice(0, 6));
-    if (fileRef.current) fileRef.current.value = '';
+    if (imageRef.current) imageRef.current.value = '';
+    if (textRef.current) textRef.current.value = '';
   };
+
+  const stopListening = () => {
+    const rec = recognitionRef.current;
+    if (rec) {
+      try {
+        rec.stop();
+      } catch {
+        /* ignore */
+      }
+    }
+    setListening(false);
+  };
+
+  const toggleListening = () => {
+    if (!speechSupported || disabled) return;
+
+    if (listening) {
+      stopListening();
+      return;
+    }
+
+    const Ctor = getSpeechRecognitionCtor();
+    if (!Ctor) return;
+
+    const recognition = new Ctor();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = navigator.language || 'en-US';
+    baseValueRef.current = value;
+    recognitionRef.current = recognition;
+
+    recognition.onresult = (event) => {
+      let interim = '';
+      let finalChunk = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        const transcript = result[0]?.transcript ?? '';
+        if (result.isFinal) finalChunk += transcript;
+        else interim += transcript;
+      }
+      if (finalChunk) {
+        const sep = baseValueRef.current && !baseValueRef.current.endsWith(' ') ? ' ' : '';
+        baseValueRef.current = `${baseValueRef.current}${sep}${finalChunk.trim()}`;
+      }
+      const interimText = interim.trim();
+      const next =
+        interimText.length > 0
+          ? `${baseValueRef.current}${baseValueRef.current && !baseValueRef.current.endsWith(' ') ? ' ' : ''}${interimText}`
+          : baseValueRef.current;
+      setValue(next);
+    };
+
+    recognition.onerror = (event) => {
+      const err = event.error || '';
+      if (err === 'not-allowed' || err === 'service-not-allowed') {
+        setAttachError('Microphone permission denied. Allow mic access to use voice input.');
+      } else if (err && err !== 'aborted' && err !== 'no-speech') {
+        setAttachError('Voice input failed. Try again.');
+      }
+      setListening(false);
+      recognitionRef.current = null;
+    };
+
+    recognition.onend = () => {
+      setListening(false);
+      recognitionRef.current = null;
+      setValue(baseValueRef.current);
+    };
+
+    try {
+      recognition.start();
+      setListening(true);
+      setAttachError(null);
+    } catch {
+      setAttachError('Could not start voice input.');
+      setListening(false);
+      recognitionRef.current = null;
+    }
+  };
+
+  const micTitle = !speechSupported
+    ? 'Voice input is not supported in this browser'
+    : listening
+      ? 'Stop listening'
+      : 'Start voice input';
 
   return (
     <div className="input-section" role="form" aria-label="Message input">
@@ -87,29 +229,70 @@ export function ChatInput({ disabled, onSend }: Props) {
       )}
       <form className="input-group" onSubmit={submit}>
         <input
-          ref={fileRef}
+          ref={imageRef}
           type="file"
           className="visually-hidden"
-          accept="image/png,image/jpeg,image/webp,image/gif,.txt,.md,.csv,.json,text/plain,text/markdown,text/csv,application/json"
+          accept="image/png,image/jpeg,image/webp,image/gif"
           multiple
           onChange={(e) => void onPickFiles(e.target.files)}
         />
-        <button
-          type="button"
-          className="attach-btn"
-          aria-label="Attach file"
-          disabled={disabled}
-          onClick={() => fileRef.current?.click()}
-          title="Attach image or text file"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-            <path d="M21.44 11.05l-8.49 8.49a5.5 5.5 0 01-7.78-7.78l8.49-8.49a3.5 3.5 0 014.95 4.95l-8.5 8.49a1.5 1.5 0 01-2.12-2.12l7.79-7.79" />
-          </svg>
-        </button>
+        <input
+          ref={textRef}
+          type="file"
+          className="visually-hidden"
+          accept=".txt,.md,.csv,.json,text/plain,text/markdown,text/csv,application/json"
+          multiple
+          onChange={(e) => void onPickFiles(e.target.files)}
+        />
+
+        <div className="attach-menu" ref={attachMenuRef}>
+          <button
+            type="button"
+            className={`attach-btn${attachMenuOpen ? ' attach-btn--open' : ''}`}
+            aria-label="Attach a file"
+            aria-expanded={attachMenuOpen}
+            aria-haspopup="menu"
+            disabled={disabled}
+            onClick={() => setAttachMenuOpen((v) => !v)}
+            title="Attach a file"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" aria-hidden="true">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
+          {attachMenuOpen && (
+            <div className="attach-menu-panel" role="menu" aria-label="Attachment options">
+              <button
+                type="button"
+                role="menuitem"
+                className="attach-menu-item"
+                onClick={() => {
+                  setAttachMenuOpen(false);
+                  imageRef.current?.click();
+                }}
+              >
+                Attach image
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="attach-menu-item"
+                onClick={() => {
+                  setAttachMenuOpen(false);
+                  textRef.current?.click();
+                }}
+              >
+                Attach text file
+              </button>
+            </div>
+          )}
+        </div>
+
         <input
           type="text"
           id="chat-input"
-          placeholder="Ask me anything..."
+          placeholder={listening ? 'Listening…' : 'Ask me anything...'}
           aria-label="Type your message"
           autoFocus
           disabled={disabled}
@@ -122,6 +305,25 @@ export function ChatInput({ disabled, onSend }: Props) {
             }
           }}
         />
+
+        <button
+          type="button"
+          className={`mic-btn${listening ? ' mic-btn--listening' : ''}`}
+          aria-label={micTitle}
+          aria-pressed={listening}
+          title={micTitle}
+          disabled={disabled || !speechSupported}
+          onClick={toggleListening}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
+            <path d="M19 10v2a7 7 0 01-14 0v-2" />
+            <line x1="12" y1="19" x2="12" y2="23" />
+            <line x1="8" y1="23" x2="16" y2="23" />
+          </svg>
+          {listening && <span className="mic-listening-label">Listening…</span>}
+        </button>
+
         <button id="send" type="submit" aria-label="Send message" disabled={!canSend}>
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
             <line x1="22" y1="2" x2="11" y2="13" />
