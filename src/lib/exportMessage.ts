@@ -2,6 +2,9 @@
  * Browser-side message export (Markdown / HTML downloads).
  */
 import DOMPurify from 'dompurify';
+import { Capacitor } from '@capacitor/core';
+import { Directory, Filesystem } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 import { safeMarkdown } from './markdown';
 import {
   exportFilename,
@@ -49,5 +52,17 @@ export function downloadMessageAsHtml(content: string): void {
     doc = wrapHtmlDocument(body);
   }
 
-  triggerBrowserDownload(exportFilename('html'), 'text/html;charset=utf-8', doc);
+  const filename = exportFilename('html');
+  if (Capacitor.isNativePlatform()) {
+    void (async () => {
+      const saved = await Filesystem.writeFile({
+        path: filename,
+        data: btoa(unescape(encodeURIComponent(doc))),
+        directory: Directory.Cache,
+      });
+      await Share.share({ title: filename, url: saved.uri, dialogTitle: 'Save or share HTML file' });
+    })();
+    return;
+  }
+  triggerBrowserDownload(filename, 'text/html;charset=utf-8', doc);
 }
