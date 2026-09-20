@@ -9,15 +9,28 @@
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 const ALLOWED_MODELS = new Set([
-    'google/gemini-2.0-pro-exp-02-05:free',
-    'google/gemini-2.0-flash-exp:free',
-    'google/gemini-exp-1206:free',
-    'meta-llama/llama-3.2-3b-instruct:free',
-    'mistralai/mistral-7b-instruct:free',
-    'qwen/qwen-2-7b-instruct:free',
-    'huggingfaceh4/zephyr-7b-beta:free',
-    'openchat/openchat-7b:free'
+    'google/gemma-4-31b-it:free',
+    'google/gemma-4-26b-a4b-it:free',
+    'qwen/qwen3.8-27b:free',
+    'z-ai/glm-5.2:free',
+    'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+    'nvidia/nemotron-3-super-120b-a12b:free',
+    'nvidia/nemotron-3.5-lightning:free',
+    'liquid/lfm-2.5-2.6b:free',
+    'cohere/north-mini-code:free',
+    'thinkingmachines/inkling:free',
+    'thinkingmachines/inkling-small:free',
+    'poolside/laguna-s-2.1:free'
 ]);
+
+// Prefer the curated set; also allow any other OpenRouter :free id so
+// chat keeps working when the free roster rotates.
+const isAllowedModel = (model) =>
+    typeof model === 'string'
+    && model.length > 0
+    && model.length < 200
+    && /^[a-z0-9][a-z0-9._/-]*:free$/i.test(model)
+    && (ALLOWED_MODELS.has(model) || model.endsWith(':free'));
 
 const ALLOWED_ROLES = new Set(['system', 'user', 'assistant']);
 const MAX_MESSAGES = 40;
@@ -61,7 +74,7 @@ export default async (request) => {
 
     const { model, messages, temperature = DEFAULT_TEMPERATURE } = body ?? {};
 
-    if (typeof model !== 'string' || !ALLOWED_MODELS.has(model)) {
+    if (!isAllowedModel(model)) {
         return jsonResponse(400, { error: 'Model not allowed' });
     }
     if (!Array.isArray(messages) || messages.length === 0) {
