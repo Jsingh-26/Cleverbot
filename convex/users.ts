@@ -13,6 +13,7 @@ export const viewer = query({
       name: user.name ?? null,
       email: user.email ?? null,
       image: user.image ?? null,
+      isAnonymous: user.isAnonymous ?? false,
     };
   },
 });

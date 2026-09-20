@@ -2,11 +2,11 @@
 
 A Vite + React chat app that talks to free AI models on OpenRouter — through
 **Netlify serverless functions** so the **API key never reaches the browser** —
-with optional **Convex Auth (Google)** and **saved chat history** for signed-in users.
+with optional **Convex Auth (email/password or anonymous)** and **saved chat history** for signed-in users.
 
 ## Guest vs signed-in
 
-| | Guest | Signed in (Google) |
+| | Guest | Signed in (password or anonymous) |
 |---|---|---|
 | Chat via Netlify `/api/chat` (streaming) | Yes | Yes |
 | Web search (OpenRouter `web` plugin) | Yes (server-side) | Yes (server-side) |
@@ -19,7 +19,7 @@ with optional **Convex Auth (Google)** and **saved chat history** for signed-in 
 ## Architecture
 
 ```
-browser ── Convex Auth (Google) ──▶ Convex (*.convex.cloud / *.convex.site)
+browser ── Convex Auth (password / anonymous) ──▶ Convex (*.convex.cloud / *.convex.site)
 browser ──GET  /api/models──────▶ Netlify Function ──▶ OpenRouter /models
 browser ──POST /api/chat────────▶ Netlify Function ──Bearer key──▶ OpenRouter
 browser ◀────── SSE stream ──────────────────────────────────────
@@ -32,7 +32,7 @@ signed-in users also write threads/messages to Convex after each reply
 - **Streaming markdown** chat (marked + DOMPurify + highlight.js)
 - **Best-available free model** ranking via `/api/models`
 - **Web search by default** in `netlify/functions/chat.mjs`
-- **Convex** as auth + database (optional Google login)
+- **Convex** as auth + database (password + anonymous)
 - Left **chat-history sidebar** for signed-in users
 
 ## Credentials still needed (checklist)
@@ -49,23 +49,11 @@ After merging / deploying this branch you must supply:
 
 | Variable | Where | Notes |
 |---|---|---|
-| `AUTH_GOOGLE_ID` | Convex env | Google OAuth **Client ID** |
-| `AUTH_GOOGLE_SECRET` | Convex env | Google OAuth **Client secret** |
-| `SITE_URL` | Convex env | Frontend origin, e.g. `http://localhost:5173` or `https://your-site.netlify.app` |
-| `CONVEX_SITE_URL` | Convex (auto) | `https://<deployment>.convex.site` — OAuth callback host |
-| `JWT_PRIVATE_KEY` | Convex env | From `npx @convex-dev/auth` / key generation |
+| `SITE_URL` | Convex env | Frontend origin, e.g. `https://cleverbot.netlify.app` |
+| `JWT_PRIVATE_KEY` | Convex env | From `npx @convex-dev/auth` |
 | `JWKS` | Convex env | Generated with the JWT key |
 
-Google OAuth **Authorized redirect URI**:
-
-```text
-{CONVEX_SITE_URL}/api/auth/callback/google
-```
-
-Example: `https://happy-animal-123.convex.site/api/auth/callback/google`
-
-Also add your frontend origin under Google’s **Authorized JavaScript origins**
-(e.g. `http://localhost:5173`, `https://your-site.netlify.app`).
+No Google/GitHub OAuth client is required. Sign-in is **email + password** or **Continue anonymously**.
 
 ### 3. Netlify / Vite env
 

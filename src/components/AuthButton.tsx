@@ -1,10 +1,11 @@
 import { useAuthActions } from '@convex-dev/auth/react';
 import { useConvexAuth, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
+import { AuthPanel } from './AuthPanel';
 
 export function AuthButton() {
   const { isAuthenticated, isLoading } = useConvexAuth();
-  const { signIn, signOut } = useAuthActions();
+  const { signOut } = useAuthActions();
   const viewer = useQuery(api.users.viewer, isAuthenticated ? {} : 'skip');
 
   if (isLoading) {
@@ -12,31 +13,29 @@ export function AuthButton() {
   }
 
   if (!isAuthenticated) {
-    return (
-      <button
-        type="button"
-        className="auth-button auth-button--signin"
-        onClick={() => void signIn('google')}
-      >
-        Sign in with Google
-      </button>
-    );
+    return <AuthPanel compact />;
   }
 
-  const initial = (viewer?.name || viewer?.email || 'U').charAt(0).toUpperCase();
+  const label = viewer?.isAnonymous
+    ? 'Anonymous'
+    : viewer?.name || viewer?.email || 'Signed in';
+  const initial = label.charAt(0).toUpperCase();
 
   return (
     <div className="auth-user">
       {viewer?.image ? (
         <img className="user-avatar-img" src={viewer.image} alt="" referrerPolicy="no-referrer" />
       ) : (
-        <div className="user-avatar" title={viewer?.name || viewer?.email || 'Signed in'} aria-label="Signed in">
+        <div className="user-avatar" title={label} aria-label={label}>
           {initial}
         </div>
       )}
-      <button type="button" className="auth-button auth-button--signout" onClick={() => void signOut()}>
-        Sign out
-      </button>
+      <div className="auth-user-meta">
+        <span className="auth-user-label">{label}</span>
+        <button type="button" className="auth-button auth-button--signout" onClick={() => void signOut()}>
+          Sign out
+        </button>
+      </div>
     </div>
   );
 }
