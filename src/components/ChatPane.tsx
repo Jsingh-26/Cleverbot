@@ -3,12 +3,12 @@ import { useConvexAuth, useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import type { Id } from '../../convex/_generated/dataModel';
 import {
+  detectTaskHint,
   makeApiRequest,
   processStream,
   refreshSessionModels,
   type ChatMessage,
 } from '../lib/api';
-import { getModels } from '../lib/config';
 import {
   buildApiContent,
   buildPersistContent,
@@ -128,11 +128,6 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
         });
       }
 
-      // Prefer vision-capable free models when this turn has images.
-      const models = hasImages
-        ? await refreshSessionModels({ hasImages: true })
-        : getModels();
-
       const historyForApi = buildConversation(
         isAuthenticated && activeThreadId && remoteMessages
           ? [
@@ -148,36 +143,66 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
         apiContent,
       );
 
+      // Task-ranked fallback chain; primary attempt uses server auto-routing.
+      const task = detectTaskHint(historyForApi, { hasImages });
+      const models = await refreshSessionModels({ task });
+
       let succeeded = false;
 
-      for (let i = 0; i < models.length; i++) {
-        const result = await makeApiRequest(historyForApi, i, { models });
+      const attempts: Array<{ auto: boolean; index: number; label: string }> = [
+        { auto: true, index: 0, label: 'auto' },
+        ...models.slice(0, 5).map((id, index) => ({
+          auto: false,
+          index,
+          label: id,
+        })),
+      ];
+
+      for (const attempt of attempts) {
+        const result = await makeApiRequest(historyForApi, attempt.index, {
+          models,
+          auto: attempt.auto,
+        });
         if (!result.success) {
-          console.warn(`Model ${models[i]} failed:`, result.error);
+          console.warn(`Model ${attempt.label} failed:`, result.error);
           continue;
         }
 
         setThinking(false);
         const botId = `local-bot-${Date.now()}`;
+        let usedModelId = result.modelId;
         setLocalMessages((prev) => [
           ...prev,
           {
             id: botId,
             role: 'assistant',
             content: '',
-            modelId: result.modelId,
+            modelId: usedModelId,
             streaming: true,
           },
         ]);
 
         let rawResponse = '';
         try {
-          const { received } = await processStream(result.response, (chunk) => {
-            rawResponse += chunk;
-            setLocalMessages((prev) =>
-              prev.map((m) => (m.id === botId ? { ...m, content: rawResponse } : m)),
-            );
-          });
+          const { received, modelId: streamedModelId } = await processStream(
+            result.response,
+            (chunk) => {
+              rawResponse += chunk;
+              setLocalMessages((prev) =>
+                prev.map((m) => (m.id === botId ? { ...m, content: rawResponse } : m)),
+              );
+            },
+            {
+              onModelId: (id) => {
+                usedModelId = id;
+                setLocalMessages((prev) =>
+                  prev.map((m) => (m.id === botId ? { ...m, modelId: id } : m)),
+                );
+              },
+            },
+          );
+
+          if (streamedModelId) usedModelId = streamedModelId;
 
           if (!received || !rawResponse.trim()) {
             throw new Error('Model returned an empty response');
@@ -185,7 +210,9 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
 
           setLocalMessages((prev) =>
             prev.map((m) =>
-              m.id === botId ? { ...m, content: rawResponse, streaming: false } : m,
+              m.id === botId
+                ? { ...m, content: rawResponse, streaming: false, modelId: usedModelId }
+                : m,
             ),
           );
 
@@ -194,7 +221,7 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
               threadId: workingThreadId,
               role: 'assistant',
               content: rawResponse,
-              modelId: result.modelId,
+              modelId: usedModelId,
             });
             persistedAssistantIds.current.add(botId);
             setLocalMessages((prev) =>
@@ -205,7 +232,7 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
           succeeded = true;
           break;
         } catch (streamError) {
-          console.warn(`Stream from ${models[i]} failed:`, (streamError as Error).message);
+          console.warn(`Stream from ${attempt.label} failed:`, (streamError as Error).message);
           setLocalMessages((prev) => prev.filter((m) => m.id !== botId));
         }
       }
