@@ -1,265 +1,122 @@
-import { API_URL, API_KEY, MODELS } from './config.js';
+import { CHAT_ENDPOINT, MODELS_ENDPOINT, getModels } from './config.js';
 
-// API module for OpenRouter
-export class API {
-    constructor() {
-        this.API_URL = API_URL;
-        this.API_KEY = API_KEY;
-    }
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-    // Helper to create consistent headers
-    getHeaders() {
-        if (!this.API_KEY) {
-            console.error('API key is not available');
-            throw new Error('API key is required');
-        }
+// Statuses where retrying the same model is worthwhile (rate limits, server hiccups)
+const isRetryable = (status) => status === 408 || status === 429 || (status >= 500 && status <= 599);
 
-        // Validate API key format
-        if (this.API_KEY === '{{OPENROUTER_API_KEY}}' || !this.API_KEY.startsWith('sk-or-')) {
-            console.error('Invalid API key format');
-            throw new Error('Invalid API key format');
-        }
-
-        const headers = {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${this.API_KEY}`,
-            'HTTP-Referer': window.location.origin || 'http://localhost:3000'
-        };
-
-        // Log headers for debugging (with masked API key)
-        const maskedKey = this.API_KEY.substring(0, 6) + '...' + this.API_KEY.substring(this.API_KEY.length - 4);
-        console.log('Using API key:', maskedKey);
-        console.log('Generated headers:', {
-            ...headers,
-            'Authorization': 'Bearer [MASKED]'
-        });
-
-        return headers;
-    }
-
-    // Main API call method
-    async sendMessage(message, modelId) {
-        try {
-            const headers = this.getHeaders();
-            const body = {
-                model: modelId,
-                messages: [
-                    { role: 'user', content: message }
-                ],
-                temperature: 0.7
-            };
-
-            console.log('Sending request:', {
-                url: this.API_URL,
-                model: modelId,
-                headers: {
-                    ...headers,
-                    'Authorization': 'Bearer [MASKED]'
-                },
-                body
-            });
-
-            const response = await fetch(this.API_URL, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify(body)
-            });
-
-            if (!response.ok) {
-                throw await this.handleErrorResponse(response);
-            }
-
-            const data = await response.json();
-            return {
-                success: true,
-                message: data.choices[0].message.content,
-                modelId: modelId
-            };
-        } catch (error) {
-            return {
-                success: false,
-                error: this.formatError(error)
-            };
-        }
-    }
-
-    // Error handling methods
-    async handleErrorResponse(response) {
-        const errorData = await response.json().catch(() => ({}));
-        const error = new Error(errorData.error?.message || 'Failed to get response from the model');
-        error.status = response.status;
-        error.statusText = response.statusText;
-        error.details = errorData;
-        return error;
-    }
-
-    formatError(error) {
-        if (error.status === 429) {
-            return new Error('Rate limit exceeded. Please try again later.');
-        }
-        if (error.status === 401) {
-            return new Error('Invalid API key or authentication failed. Please check your configuration.');
-        }
-        if (error.status === 404) {
-            return new Error('Selected model is currently unavailable.');
-        }
-        return error;
-    }
-}
-
-// Export a singleton instance
-export const api = new API();
-
-// Utility function to handle API errors
-const handleApiError = (error, modelIndex) => {
-    const errorMessage = error.message || 'An unknown error occurred';
-    const modelId = MODELS[modelIndex];
-    console.error(`Error with model ${modelId}:`, {
-        error: errorMessage,
-        modelIndex,
-        modelId,
-        status: error.status,
-        statusText: error.statusText,
-        details: error.details
-    });
-    return {
-        success: false,
-        error: errorMessage,
-        modelId
-    };
-};
-
-// Function to make API requests with retries
-export const makeApiRequest = async (message, modelIndex, maxRetries = 3) => {
-    if (!API_KEY) {
-        console.error('API key is not configured. Check your environment variables.');
-        return handleApiError(new Error('API key is not configured'), modelIndex);
-    }
-
-    const modelId = MODELS[modelIndex];
-    console.log(`Starting request for model ${modelId}`, {
-        modelIndex,
-        messageLength: message.length,
-        retryLimit: maxRetries
-    });
-
-    let retries = 0;
-    
-    while (retries < maxRetries) {
-        try {
-            console.log(`Attempt ${retries + 1} for model ${modelId}`);
-            
-            const headers = api.getHeaders();
-
-            // Log request details for debugging
-            console.log('Request details:', {
-                url: API_URL,
-                model: modelId,
-                headers: {
-                    ...headers,
-                    'Authorization': 'Bearer [MASKED]'
-                }
-            });
-            
-            const response = await fetch(API_URL, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({
-                    model: modelId,
-                    messages: [
-                        { role: 'user', content: message }
-                    ],
-                    temperature: 0.7,
-                    stream: true
-                })
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                const error = errorData.error || errorData;
-                console.error(`API Error Details:`, {
-                    status: response.status,
-                    statusText: response.statusText,
-                    error: error,
-                    model: modelId,
-                    responseHeaders: Object.fromEntries(response.headers.entries()),
-                    requestHeaders: headers
-                });
-                throw new Error(error?.message || `HTTP error! status: ${response.status}`);
-            }
-
-            console.log(`Successful response from model ${modelId}`);
-            return {
-                success: true,
-                response,
-                modelId
-            };
-        } catch (error) {
-            console.error(`Attempt ${retries + 1} failed for model ${modelId}:`, {
-                error: error.message,
-                attempt: retries + 1,
-                maxRetries
-            });
-            retries++;
-            if (retries === maxRetries) {
-                return handleApiError(error, modelIndex);
-            }
-            // Wait before retrying (exponential backoff)
-            const delay = Math.pow(2, retries) * 1000;
-            console.log(`Waiting ${delay}ms before retry...`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-        }
-    }
-};
-
-// Function to process streaming response
-export const processStream = async (response, onChunk) => {
+const readErrorMessage = async (response) => {
     try {
-        const reader = response.body.getReader();
-        const textDecoder = new TextDecoder();
-        let accumulatedText = '';
+        const data = await response.json();
+        if (data?.error) return String(data.error);
+    } catch {
+        // Error body was not JSON
+    }
+    return `Request failed with HTTP ${response.status}`;
+};
 
-        console.log('Starting to process stream');
+// Ask the server which supported models are currently live, best first.
+// Returns an array of model ids, or null if the check failed (caller falls
+// back to the static order).
+export const fetchRankedModels = async () => {
+    try {
+        const response = await fetch(MODELS_ENDPOINT, {
+            headers: { 'Accept': 'application/json' }
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        const ids = Array.isArray(data?.models) ? data.models.map((m) => m.id) : [];
+        return ids.length ? ids : null;
+    } catch (error) {
+        console.warn('Model availability check failed:', error.message);
+        return null;
+    }
+};
 
+// POST the conversation to the serverless proxy and return the raw SSE response.
+// Retries transient failures with exponential backoff; permanent errors (4xx)
+// return immediately so the caller can fall back to the next model.
+export const makeApiRequest = async (messages, modelIndex, { maxRetries = 2, signal, temperature = 0.7 } = {}) => {
+    const modelId = getModels()[modelIndex];
+    if (!modelId) {
+        return { success: false, error: `No model configured at index ${modelIndex}` };
+    }
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            const response = await fetch(CHAT_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model: modelId, messages, temperature, stream: true }),
+                signal
+            });
+
+            if (!response.ok) {
+                const error = await readErrorMessage(response);
+                if (isRetryable(response.status) && attempt < maxRetries) {
+                    await sleep(2 ** attempt * 1000);
+                    continue;
+                }
+                return { success: false, error, status: response.status, modelId };
+            }
+
+            return { success: true, response, modelId };
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                return { success: false, error: 'Request cancelled', aborted: true, modelId };
+            }
+            if (attempt === maxRetries) {
+                return { success: false, error: error.message, modelId };
+            }
+            await sleep(2 ** attempt * 1000);
+        }
+    }
+};
+
+// Consumes an OpenRouter SSE stream and calls onChunk(text) for every content
+// delta. Handles JSON payloads split across chunk boundaries and the
+// [DONE] terminator. Returns whether any content was received.
+export const processStream = async (response, onChunk) => {
+    if (!response.body) {
+        throw new Error('Response has no readable body');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let received = false;
+
+    const handleLine = (rawLine) => {
+        const line = rawLine.trim();
+        if (!line.startsWith('data:')) return;
+        const data = line.slice(5).trim();
+        if (!data || data === '[DONE]') return;
+        try {
+            const parsed = JSON.parse(data);
+            const content = parsed?.choices?.[0]?.delta?.content;
+            if (typeof content === 'string' && content.length > 0) {
+                received = true;
+                onChunk(content);
+            }
+        } catch {
+            // Non-JSON control line — ignore
+        }
+    };
+
+    try {
         while (true) {
             const { done, value } = await reader.read();
-            if (done) {
-                console.log('Stream completed', {
-                    totalLength: accumulatedText.length
-                });
-                break;
-            }
-
-            const chunk = textDecoder.decode(value);
-            const lines = chunk.split('\n');
-            
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    try {
-                        const data = JSON.parse(line.substring(6));
-                        if (data.choices && data.choices[0].delta?.content) {
-                            const content = data.choices[0].delta.content;
-                            accumulatedText += content;
-                            onChunk(content);
-                        }
-                    } catch (e) {
-                        console.error('Error parsing stream chunk:', {
-                            error: e.message,
-                            line: line.substring(0, 50) + '...' // Only log first 50 chars
-                        });
-                        if (line.includes('[DONE]')) {
-                            console.log('Stream completed with [DONE] signal');
-                            return;
-                        }
-                    }
-                }
-            }
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() ?? ''; // the last piece may be an incomplete line
+            for (const line of lines) handleLine(line);
         }
-    } catch (error) {
-        console.error('Error processing stream:', {
-            error: error.message,
-            stack: error.stack
-        });
-        throw error;
+        buffer += decoder.decode();
+        if (buffer) handleLine(buffer);
+    } finally {
+        reader.releaseLock();
     }
-}; 
+
+    return { received };
+};

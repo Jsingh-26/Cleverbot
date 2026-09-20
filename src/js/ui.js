@@ -1,22 +1,27 @@
-// Use the global instances
-const { marked, hljs } = window;
+// UI management module.
+//
+// Bot messages are rendered as markdown (marked) and sanitized with DOMPurify
+// before touching innerHTML — model output is untrusted data. User and error
+// messages always use textContent.
 
-// Configure marked options
-marked.setOptions({
-    breaks: true,        // Convert \n to <br>
-    gfm: true,          // Enable GitHub Flavored Markdown
-    headerIds: true,    // Add IDs to headers
-    mangle: false,      // Don't escape HTML
-    sanitize: false,    // Allow HTML
-    smartLists: true,   // Use smarter list behavior
-    smartypants: true,  // Use smart punctuation
-    xhtml: true,        // Use XHTML style tags
-    highlight: function(code, lang) {
-        return hljs.highlightAuto(code).value;
-    }
-});
+const { marked, hljs, DOMPurify } = window;
 
-// UI management module
+if (marked) {
+    // marked v15 removed the legacy options (sanitize, headerIds, mangle,
+    // highlight). Code highlighting is applied manually after rendering.
+    marked.setOptions({
+        breaks: true,   // Convert single newlines to <br>
+        gfm: true       // GitHub Flavored Markdown
+    });
+}
+
+// Markdown -> sanitized HTML. Returns null when the markdown toolchain is
+// unavailable (CDN offline), so callers can fall back to plain text.
+const safeMarkdown = (raw) => {
+    if (!marked || !DOMPurify) return null;
+    return DOMPurify.sanitize(marked.parse(raw), { USE_PROFILES: { html: true } });
+};
+
 export class UI {
     constructor() {
         this.chatDisplay = document.querySelector('#chat-display');
@@ -26,138 +31,75 @@ export class UI {
         this.modelInfoTemplate = document.querySelector('#model-info-template');
         this.thinkingTemplate = document.querySelector('#thinking-template');
 
-        // Initialize send button state
+        // Streaming render throttling state
+        this._pendingRender = new WeakMap();
+        this._scheduledFrames = new Set();
+
         this.updateSendButtonState();
-
-        // Add markdown styles
-        this.addMarkdownStyles();
     }
 
-    // Add styles for markdown content
-    addMarkdownStyles() {
-        const style = document.createElement('style');
-        style.textContent = `
-            .message-content .message {
-                line-height: 1.6;
-                font-size: 1rem;
-                white-space: pre-wrap;
+    // Render markdown into a message element. During streaming, re-renders are
+    // throttled to one per animation frame and syntax highlighting is skipped;
+    // the final render (streaming: false) also applies highlighting.
+    renderMessageContent(messageEl, raw, { streaming = false } = {}) {
+        if (!messageEl) return;
+
+        if (!streaming) {
+            this._pendingRender.delete(messageEl); // cancel any queued stream frame
+            const html = safeMarkdown(raw);
+            if (html === null) {
+                messageEl.textContent = raw;
+            } else {
+                messageEl.innerHTML = html;
+                messageEl.querySelectorAll('pre code').forEach((block) => hljs?.highlightElement(block));
             }
-            .message-content .message > *:first-child {
-                margin-top: 0;
+            this.scrollToBottom();
+            return;
+        }
+
+        this._pendingRender.set(messageEl, raw);
+        if (this._scheduledFrames.has(messageEl)) return;
+
+        this._scheduledFrames.add(messageEl);
+        requestAnimationFrame(() => {
+            this._scheduledFrames.delete(messageEl);
+            const latest = this._pendingRender.get(messageEl);
+            if (latest === undefined) return; // final render already ran
+            const html = safeMarkdown(latest);
+            if (html === null) {
+                messageEl.textContent = latest;
+            } else {
+                messageEl.innerHTML = html;
             }
-            .message-content .message > *:last-child {
-                margin-bottom: 0;
-            }
-            .message-content .message p {
-                margin: 1em 0;
-            }
-            .message-content .message h1,
-            .message-content .message h2,
-            .message-content .message h3,
-            .message-content .message h4 {
-                margin: 1.5em 0 0.5em;
-                font-weight: 600;
-                line-height: 1.3;
-            }
-            .message-content .message h1 { font-size: 1.5em; }
-            .message-content .message h2 { font-size: 1.3em; }
-            .message-content .message h3 { font-size: 1.2em; }
-            .message-content .message h4 { font-size: 1.1em; }
-            
-            .message-content .message code {
-                background-color: rgba(0, 0, 0, 0.05);
-                padding: 0.2em 0.4em;
-                border-radius: 3px;
-                font-family: 'Fira Code', monospace;
-                font-size: 0.9em;
-            }
-            .message-content .message pre {
-                background-color: rgba(0, 0, 0, 0.05);
-                padding: 1em;
-                border-radius: 5px;
-                overflow-x: auto;
-                margin: 1em 0;
-            }
-            .message-content .message pre code {
-                background-color: transparent;
-                padding: 0;
-                display: block;
-                line-height: 1.5;
-            }
-            .message-content .message ul,
-            .message-content .message ol {
-                margin: 1em 0;
-                padding-left: 2em;
-            }
-            .message-content .message li {
-                margin: 0.5em 0;
-            }
-            .message-content .message blockquote {
-                border-left: 4px solid #ddd;
-                margin: 1em 0;
-                padding: 0.5em 0 0.5em 1em;
-                color: #555;
-                background-color: rgba(0, 0, 0, 0.02);
-            }
-            .message-content .message strong {
-                font-weight: 600;
-            }
-            .message-content .message em {
-                font-style: italic;
-            }
-            .message-content .message a {
-                color: #0066cc;
-                text-decoration: none;
-            }
-            .message-content .message a:hover {
-                text-decoration: underline;
-            }
-            .message-content .message table {
-                border-collapse: collapse;
-                margin: 1em 0;
-                width: 100%;
-            }
-            .message-content .message th,
-            .message-content .message td {
-                border: 1px solid #ddd;
-                padding: 0.5em;
-                text-align: left;
-            }
-            .message-content .message th {
-                background-color: rgba(0, 0, 0, 0.05);
-                font-weight: 600;
-            }
-        `;
-        document.head.appendChild(style);
+            this.scrollToBottom();
+        });
     }
 
-    // Message creation methods
     createMessageWrapper(type) {
         const wrapper = document.createElement('div');
-        wrapper.className = `message-wrapper ${type}-message`;
-        
+        wrapper.className = `message-wrapper ${type}`;
+
         const content = document.createElement('div');
         content.className = 'message-content';
-        
+
         const avatar = document.createElement('div');
         avatar.className = `avatar ${type}-avatar`;
-        avatar.textContent = type === 'user' ? 'U' : 'C';
-        
+        avatar.textContent = type === 'user' ? 'U' : (type === 'error' ? '!' : 'C');
+
         const message = document.createElement('div');
         message.className = 'message';
-        
+
         content.appendChild(avatar);
         content.appendChild(message);
         wrapper.appendChild(content);
-        
+
         return { wrapper, message };
     }
 
     createModelInfo(modelId) {
         const template = this.modelInfoTemplate.content.cloneNode(true);
         const modelInfo = template.querySelector('.model-info');
-        const modelName = modelInfo.querySelector('.model-name');
-        modelName.textContent = this.formatModelName(modelId);
+        modelInfo.querySelector('.model-name').textContent = this.formatModelName(modelId);
         return modelInfo;
     }
 
@@ -166,31 +108,18 @@ export class UI {
         return template.querySelector('.thinking');
     }
 
-    // Message display methods
     appendMessage(content, type, modelId = null) {
         const { wrapper, message } = this.createMessageWrapper(type);
-        
-        // Convert markdown to HTML for bot messages
+
         if (type === 'bot') {
-            try {
-                const htmlContent = marked.parse(content);
-                message.innerHTML = htmlContent;
-                
-                // Add syntax highlighting to code blocks
-                message.querySelectorAll('pre code').forEach((block) => {
-                    hljs.highlightElement(block);
-                });
-            } catch (error) {
-                console.error('Error parsing markdown:', error);
-                message.textContent = content;
-            }
+            this.renderMessageContent(message, content, { streaming: false });
         } else {
+            // User and error messages are plain text — never HTML.
             message.textContent = content;
         }
 
         if (type === 'bot' && modelId) {
-            const modelInfo = this.createModelInfo(modelId);
-            wrapper.appendChild(modelInfo);
+            wrapper.appendChild(this.createModelInfo(modelId));
         }
 
         this.messageContainer.appendChild(wrapper);
@@ -205,14 +134,6 @@ export class UI {
         return thinking;
     }
 
-    removeThinkingIndicator() {
-        const thinking = this.messageContainer.querySelector('.thinking');
-        if (thinking) {
-            thinking.remove();
-        }
-    }
-
-    // Input handling methods
     getInputValue() {
         return this.chatInput.value.trim();
     }
@@ -232,22 +153,26 @@ export class UI {
     }
 
     updateSendButtonState() {
-        this.sendButton.disabled = !this.getInputValue();
+        if (!this.chatInput.disabled) {
+            this.sendButton.disabled = !this.getInputValue();
+        }
     }
 
-    // Utility methods
     scrollToBottom() {
         this.chatDisplay.scrollTop = this.chatDisplay.scrollHeight;
     }
 
     formatModelName(modelId) {
         const [provider, model] = modelId.split('/');
-        const formattedModel = model.split('-').map(word => 
+        const formattedModel = (model || '').split('-').map((word) =>
             word.charAt(0).toUpperCase() + word.slice(1)
         ).join(' ');
-        return `${provider.charAt(0).toUpperCase() + provider.slice(1)} - ${formattedModel}`;
+        const formattedProvider = provider
+            ? provider.charAt(0).toUpperCase() + provider.slice(1)
+            : 'Unknown';
+        return `${formattedProvider} - ${formattedModel}`;
     }
 }
 
-// Export a singleton instance
-export const ui = new UI(); 
+// Singleton instance
+export const ui = new UI();

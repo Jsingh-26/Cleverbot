@@ -1,5 +1,0 @@
-[33mcommit 0ea63edf11c5ae91adf564fc43a4d35ce44efac1[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m
-Author: jsingh-26 <jaspreet.26.singh@gmail.com>
-Date:   Wed Jan 8 15:12:32 2025 +0530
-
-    Fixed sorting functionality and sticky header in dashboard
