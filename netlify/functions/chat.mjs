@@ -9,14 +9,14 @@
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 const ALLOWED_MODELS = new Set([
-    'google/gemma-4-31b-it:free',
     'google/gemma-4-26b-a4b-it:free',
+    'liquid/lfm-2.5-2.6b:free',
+    'nvidia/nemotron-3-super-120b-a12b:free',
+    'google/gemma-4-31b-it:free',
     'qwen/qwen3.8-27b:free',
     'z-ai/glm-5.2:free',
     'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
-    'nvidia/nemotron-3-super-120b-a12b:free',
     'nvidia/nemotron-3.5-lightning:free',
-    'liquid/lfm-2.5-2.6b:free',
     'cohere/north-mini-code:free',
     'thinkingmachines/inkling:free',
     'thinkingmachines/inkling-small:free',
