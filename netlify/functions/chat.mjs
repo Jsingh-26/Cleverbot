@@ -4,8 +4,17 @@
 // never sees it. This function validates incoming requests and forwards them
 // to OpenRouter, streaming the SSE response back to the client.
 //
-// Any live OpenRouter `:free` model id is allowed (plus the `openrouter/free`
-// router). Model preference is decided client-side from GET /api/models.
+// Model selection:
+//   - Explicit `:free` model id (or `openrouter/free`) is used as-is.
+//   - Missing model, empty string, or `model: "auto"` → live task-aware
+//     routing: detect task from messages, rank free OpenRouter models, pick #1.
+//     Chosen id is returned in `X-Model-Id` and a leading SSE comment.
+
+import {
+    detectTask,
+    fetchRankedFreeModels,
+    OPENROUTER_FREE_ROUTER
+} from './lib/openrouter-models.mjs';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -14,7 +23,7 @@ const isAllowedModel = (model) =>
     && model.length > 0
     && model.length < 200
     && (
-        model === 'openrouter/free'
+        model === OPENROUTER_FREE_ROUTER
         || (/^[a-z0-9][a-z0-9._/-]*:free$/i.test(model) && model.endsWith(':free'))
     );
 
@@ -113,6 +122,71 @@ const validateContent = (content) => {
     return { ok: true, chars };
 };
 
+
+const wantsAutoRoute = (model) =>
+    model === undefined
+    || model === null
+    || model === ''
+    || (typeof model === 'string' && model.toLowerCase() === 'auto');
+
+/** Resolve which free model to call — explicit id or live auto-route. */
+const resolveModel = async (model, messages, apiKey) => {
+    if (!wantsAutoRoute(model)) {
+        if (!isAllowedModel(model)) {
+            return { error: 'Model not allowed', status: 400 };
+        }
+        return { modelId: model, task: null, auto: false };
+    }
+
+    const task = detectTask(messages);
+    try {
+        const { models } = await fetchRankedFreeModels({ task, apiKey, limit: 1 });
+        const modelId = models[0]?.id;
+        if (!modelId) {
+            return {
+                error: 'No free chat models available for auto-routing right now',
+                status: 503
+            };
+        }
+        return { modelId, task, auto: true };
+    } catch (error) {
+        return {
+            error: `Could not rank free models for auto-routing: ${error.message}`,
+            status: 502
+        };
+    }
+};
+
+/** Wrap upstream SSE with a leading comment announcing the chosen model. */
+const streamWithModelMeta = (upstreamBody, modelId) => {
+    const encoder = new TextEncoder();
+    const prefix = encoder.encode(`: model ${modelId}\n\n`);
+    if (!upstreamBody) {
+        return new ReadableStream({
+            start(controller) {
+                controller.enqueue(prefix);
+                controller.close();
+            }
+        });
+    }
+    const reader = upstreamBody.getReader();
+    return new ReadableStream({
+        async start(controller) {
+            controller.enqueue(prefix);
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    controller.enqueue(value);
+                }
+            } finally {
+                try { reader.releaseLock(); } catch { /* ignore */ }
+                controller.close();
+            }
+        }
+    });
+};
+
 export default async (request) => {
     if (request.method !== 'POST') {
         return jsonResponse(405, { error: 'Method not allowed' });
@@ -133,9 +207,6 @@ export default async (request) => {
 
     const { model, messages, temperature = DEFAULT_TEMPERATURE } = body ?? {};
 
-    if (!isAllowedModel(model)) {
-        return jsonResponse(400, { error: 'Model not allowed' });
-    }
     if (!Array.isArray(messages) || messages.length === 0) {
         return jsonResponse(400, { error: 'messages must be a non-empty array' });
     }
@@ -167,6 +238,12 @@ export default async (request) => {
         return jsonResponse(413, { error: 'Conversation too long' });
     }
 
+    const resolved = await resolveModel(model, messages, apiKey);
+    if (resolved.error) {
+        return jsonResponse(resolved.status || 400, { error: resolved.error });
+    }
+    const modelId = resolved.modelId;
+
     let upstream;
     try {
         upstream = await fetch(OPENROUTER_URL, {
@@ -178,7 +255,7 @@ export default async (request) => {
                 'X-Title': 'Cleverbot'
             },
             body: JSON.stringify({
-                model,
+                model: modelId,
                 messages,
                 temperature,
                 stream: true,
@@ -195,12 +272,16 @@ export default async (request) => {
         return jsonResponse(status, { error: message });
     }
 
-    return new Response(upstream.body, {
+    const headers = {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'X-Model-Id': modelId
+    };
+    if (resolved.task) headers['X-Task'] = resolved.task;
+
+    return new Response(streamWithModelMeta(upstream.body, modelId), {
         status: 200,
-        headers: {
-            'Content-Type': 'text/event-stream; charset=utf-8',
-            'Cache-Control': 'no-store'
-        }
+        headers
     });
 };
 

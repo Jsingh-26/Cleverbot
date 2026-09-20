@@ -24,6 +24,8 @@ export type ChatMessage = {
   content: string | ContentPart[];
 };
 
+export type TaskHint = 'vision' | 'code' | 'write' | 'chat';
+
 export type ApiRequestResult =
   | { success: true; response: Response; modelId: string }
   | {
@@ -42,14 +44,72 @@ export type RankedModel = {
   inputModalities?: string[];
 };
 
-/** Fetch live ranked free models. Pass hasImages to prefer vision-capable ones. */
-export const fetchRankedModels = async (
+/**
+ * Lightweight client-side task hint (mirrors server detectTask).
+ * Used to refresh the fallback/retry chain; primary send uses model:"auto".
+ * Priority: vision > code > write > chat.
+ */
+export const detectTaskHint = (
+  messages: ChatMessage[],
   opts: { hasImages?: boolean } = {},
+): TaskHint => {
+  if (opts.hasImages) return 'vision';
+
+  let latestUser: ChatMessage | null = null;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === 'user') {
+      latestUser = messages[i];
+      break;
+    }
+  }
+  if (!latestUser) return 'chat';
+
+  const content = latestUser.content;
+  let text = '';
+  let hasImage = false;
+
+  if (typeof content === 'string') {
+    text = content;
+  } else if (Array.isArray(content)) {
+    for (const part of content) {
+      if (part?.type === 'image_url') hasImage = true;
+      if (part?.type === 'text' && typeof part.text === 'string') {
+        text += (text ? '\n' : '') + part.text;
+      }
+    }
+  }
+
+  if (hasImage) return 'vision';
+
+  const lower = text.toLowerCase();
+  const codeSignals =
+    /```/.test(text)
+    || /\b(function|def |class |import |from |const |let |var |async |await |console\.|printf|println|traceback|stack trace|compile|debug|refactor|typescript|javascript|python|golang|rustc|webpack|npm |pip |cargo |git diff|eslint|prettier)\b/i.test(text)
+    || /\.(js|ts|tsx|jsx|py|go|rs|java|cpp|c|h|rb|php|cs|kt|swift|sql|sh|bash|yml|yaml|json|toml|mdx)\b/i.test(text)
+    || /error:\s|exception:|at\s+\w+\.\w+\(/.test(text);
+
+  if (codeSignals) return 'code';
+
+  const writeSignals =
+    /\b(essay|blog post|write (me )?(a|an|the)|draft (an? )?email|cover letter|poem|short story|creative writing|rewrite this|proofread|linkedin post|newsletter)\b/i.test(lower);
+
+  if (writeSignals) return 'write';
+  return 'chat';
+};
+
+/** Fetch live ranked free models. Pass task (or legacy hasImages) for ranking. */
+export const fetchRankedModels = async (
+  opts: { hasImages?: boolean; task?: TaskHint } = {},
 ): Promise<RankedModel[] | null> => {
   try {
-    const url = opts.hasImages
-      ? `${MODELS_ENDPOINT}?images=1`
-      : MODELS_ENDPOINT;
+    const task: TaskHint = opts.task ?? (opts.hasImages ? 'vision' : 'chat');
+    const qs =
+      task === 'chat'
+        ? ''
+        : task === 'vision' && opts.hasImages && !opts.task
+          ? '?images=1'
+          : `?task=${encodeURIComponent(task)}`;
+    const url = `${MODELS_ENDPOINT}${qs}`;
     const response = await fetch(url, {
       headers: { Accept: 'application/json' },
     });
@@ -73,7 +133,9 @@ export const fetchRankedModels = async (
 };
 
 /** Refresh session model order from /api/models and apply it. */
-export const refreshSessionModels = async (opts: { hasImages?: boolean } = {}) => {
+export const refreshSessionModels = async (
+  opts: { hasImages?: boolean; task?: TaskHint } = {},
+) => {
   const ranked = await fetchRankedModels(opts);
   if (ranked?.length) {
     setActiveModels(
@@ -85,6 +147,12 @@ export const refreshSessionModels = async (opts: { hasImages?: boolean } = {}) =
   return getModels();
 };
 
+const resolveModelIdFromResponse = (response: Response, fallback?: string) => {
+  const header = response.headers.get('X-Model-Id') || response.headers.get('x-model-id');
+  if (header && header.trim()) return header.trim();
+  return fallback || 'auto';
+};
+
 export const makeApiRequest = async (
   messages: ChatMessage[],
   modelIndex: number,
@@ -93,25 +161,35 @@ export const makeApiRequest = async (
     signal,
     temperature = 0.7,
     models,
+    /** Prefer server-side auto routing (model omitted / "auto"). */
+    auto = false,
   }: {
     maxRetries?: number;
     signal?: AbortSignal;
     temperature?: number;
     models?: string[];
+    auto?: boolean;
   } = {},
 ): Promise<ApiRequestResult> => {
   const list = models && models.length ? models : getModels();
-  const modelId = list[modelIndex];
-  if (!modelId) {
+  const explicitId = auto ? undefined : list[modelIndex];
+  if (!auto && !explicitId) {
     return { success: false, error: `No model configured at index ${modelIndex}` };
   }
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
+      const payload: Record<string, unknown> = {
+        messages,
+        temperature,
+        stream: true,
+      };
+      payload.model = auto ? 'auto' : explicitId;
+
       const response = await fetch(CHAT_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: modelId, messages, temperature, stream: true }),
+        body: JSON.stringify(payload),
         signal,
       });
 
@@ -121,29 +199,44 @@ export const makeApiRequest = async (
           await sleep(2 ** attempt * 1000);
           continue;
         }
-        return { success: false, error, status: response.status, modelId };
+        return {
+          success: false,
+          error,
+          status: response.status,
+          modelId: resolveModelIdFromResponse(response, explicitId),
+        };
       }
 
-      return { success: true, response, modelId };
+      return {
+        success: true,
+        response,
+        modelId: resolveModelIdFromResponse(response, explicitId),
+      };
     } catch (error) {
       const err = error as Error;
       if (err.name === 'AbortError') {
-        return { success: false, error: 'Request cancelled', aborted: true, modelId };
+        return {
+          success: false,
+          error: 'Request cancelled',
+          aborted: true,
+          modelId: explicitId,
+        };
       }
       if (attempt === maxRetries) {
-        return { success: false, error: err.message, modelId };
+        return { success: false, error: err.message, modelId: explicitId };
       }
       await sleep(2 ** attempt * 1000);
     }
   }
 
-  return { success: false, error: 'Request failed', modelId };
+  return { success: false, error: 'Request failed', modelId: explicitId };
 };
 
 export const processStream = async (
   response: Response,
   onChunk: (text: string) => void,
-): Promise<{ received: boolean }> => {
+  opts?: { onModelId?: (id: string) => void },
+): Promise<{ received: boolean; modelId?: string }> => {
   if (!response.body) {
     throw new Error('Response has no readable body');
   }
@@ -152,11 +245,24 @@ export const processStream = async (
   const decoder = new TextDecoder();
   let buffer = '';
   let received = false;
+  let modelId: string | undefined =
+    response.headers.get('X-Model-Id') || response.headers.get('x-model-id') || undefined;
 
   const handleLine = (rawLine: string) => {
-    const line = rawLine.trim();
-    if (!line.startsWith('data:')) return;
-    const data = line.slice(5).trim();
+    const line = rawLine.trimEnd();
+    // SSE comment announcing chosen model: ": model vendor/id:free"
+    if (line.startsWith(':')) {
+      const meta = line.slice(1).trim();
+      const match = /^model\s+(\S+)/i.exec(meta);
+      if (match?.[1]) {
+        modelId = match[1];
+        opts?.onModelId?.(modelId);
+      }
+      return;
+    }
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('data:')) return;
+    const data = trimmed.slice(5).trim();
     if (!data || data === '[DONE]') return;
     try {
       const parsed = JSON.parse(data);
@@ -185,5 +291,5 @@ export const processStream = async (
     reader.releaseLock();
   }
 
-  return { received };
+  return { received, modelId };
 };
