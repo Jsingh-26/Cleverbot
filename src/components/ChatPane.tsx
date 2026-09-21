@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { useConvexAuth, useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import type { Id } from '../../convex/_generated/dataModel';
@@ -24,6 +25,11 @@ import { requestsHtmlFile } from '../lib/fileIntent';
 
 const MAX_HISTORY_MESSAGES = 24;
 
+type CleverbotUpdatesPlugin = {
+  checkForUpdates: () => Promise<{ updateAvailable: boolean }>;
+};
+const CleverbotUpdates = registerPlugin<CleverbotUpdatesPlugin>('CleverbotUpdates');
+
 type Props = {
   activeThreadId: Id<'threads'> | null;
   onThreadCreated: (id: Id<'threads'>) => void;
@@ -45,6 +51,7 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
   const [localMessages, setLocalMessages] = useState<LocalMessage[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [thinking, setThinking] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<string | null>(null);
   const displayRef = useRef<HTMLDivElement>(null);
   const persistedAssistantIds = useRef(new Set<string>());
   const activeRequest = useRef<AbortController | null>(null);
@@ -308,6 +315,18 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
   );
 
 
+  const checkForUpdates = useCallback(async () => {
+    setUpdateStatus('Checking…');
+    try {
+      const { updateAvailable } = await CleverbotUpdates.checkForUpdates();
+      setUpdateStatus(updateAvailable ? 'Update opened' : 'Up to date');
+    } catch (error) {
+      setUpdateStatus(error instanceof Error ? error.message : 'Update check failed');
+    } finally {
+      window.setTimeout(() => setUpdateStatus(null), 3500);
+    }
+  }, []);
+
   const stopGenerating = useCallback(() => {
     activeRequest.current?.abort();
     setThinking(false);
@@ -330,6 +349,11 @@ export function ChatPane({ activeThreadId, onThreadCreated, onRequestLogin, onNe
           )}
         </div>
         <div className="header-actions">
+          {Capacitor.isNativePlatform() && (
+            <button type="button" className="header-update-btn" onClick={() => void checkForUpdates()}>
+              {updateStatus ?? 'Check for updates'}
+            </button>
+          )}
           <HeaderAuth onRequestLogin={onRequestLogin} />
           <ThemeToggle resolved={resolved} onToggle={toggleTheme} />
         </div>
