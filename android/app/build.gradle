@@ -1,5 +1,10 @@
 apply plugin: 'com.android.application'
 
+def signingStore = System.getenv('CLEVERBOT_KEYSTORE_PATH')
+def signingStorePassword = System.getenv('CLEVERBOT_KEYSTORE_PASSWORD')
+def signingKeyAlias = System.getenv('CLEVERBOT_KEY_ALIAS')
+def signingKeyPassword = System.getenv('CLEVERBOT_KEY_PASSWORD')
+
 android {
     namespace "com.jsingh26.cleverbot"
     compileSdk rootProject.ext.compileSdkVersion
@@ -16,8 +21,19 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (signingStore && signingStorePassword && signingKeyAlias && signingKeyPassword) {
+            release {
+                storeFile file(signingStore)
+                storePassword signingStorePassword
+                keyAlias signingKeyAlias
+                keyPassword signingKeyPassword
+            }
+        }
+    }
     buildTypes {
         release {
+            if (signingStore) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
@@ -36,6 +52,7 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    implementation 'com.google.firebase:firebase-appdistribution:16.0.0-beta20'
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
