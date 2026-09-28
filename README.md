@@ -36,9 +36,9 @@ signed-in users also write threads/messages to Convex after each reply
 - **Convex** as auth + database (password + anonymous)
 - Left **chat-history sidebar** for signed-in users
 
-## Credentials still needed (checklist)
+## Configuration
 
-After merging / deploying this branch you must supply:
+To run your own copy you need:
 
 ### 1. Convex project
 
@@ -92,6 +92,20 @@ VITE_CONVEX_URL=https://placeholder.convex.cloud npm run build
 2. Set Netlify env: `VITE_CONVEX_URL`, `OPENROUTER_API_KEY`
 3. Push / redeploy on Netlify (`npm run build` → `dist/`, functions unchanged)
 
+## Android app and release pipeline
+
+The same web app ships as an installable Android app through **Capacitor**
+(`android/`). Releases are built by a manually triggered GitHub Actions workflow
+(`.github/workflows/firebase-distribute.yml`) that:
+
+1. runs the unit tests and the TypeScript build,
+2. signs in to Google Cloud with **Workload Identity Federation** (no long-lived
+   service-account key stored anywhere),
+3. restores the signing keystore and `google-services.json` from GitHub secrets
+   (neither file is ever committed),
+4. builds and verifies a signed release APK, and
+5. distributes it privately to a Firebase App Distribution tester group.
+
 ## Project structure
 
 ```
@@ -105,7 +119,7 @@ src/
   css/styles.css
 convex/
   schema.ts                authTables + threads + messages
-  auth.ts                  Convex Auth + Google provider
+  auth.ts                  Convex Auth (password + anonymous)
   http.ts                  Auth HTTP routes
   threads.ts / messages.ts Auth-gated queries & mutations
   users.ts                 Current user (viewer)

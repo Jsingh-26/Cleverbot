@@ -38,6 +38,14 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npx cap sync android
+      - name: Restore Firebase config (kept out of the repository)
+        env:
+          GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_JSON_B64" ]; then
+            echo "::error::GOOGLE_SERVICES_JSON_B64 secret is not set"; exit 1
+          fi
+          printf '%s' "$GOOGLE_SERVICES_JSON_B64" | base64 --decode > android/app/google-services.json
       - name: Restore production signing key
         env:
           KEYSTORE_B64: ${{ secrets.CLEVERBOT_KEYSTORE_B64 }}
