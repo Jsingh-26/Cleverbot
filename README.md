@@ -92,7 +92,7 @@ VITE_CONVEX_URL=https://placeholder.convex.cloud npm run build
 2. Set Netlify env: `VITE_CONVEX_URL`, `OPENROUTER_API_KEY`
 3. Push / redeploy on Netlify (`npm run build` → `dist/`, functions unchanged)
 
-## Android app and release pipeline
+## Android app and release workflow
 
 The same web app ships as an installable Android app through **Capacitor**
 (`android/`). Releases are built by a manually triggered GitHub Actions workflow
@@ -105,6 +105,10 @@ The same web app ships as an installable Android app through **Capacitor**
    (neither file is ever committed),
 4. builds and verifies a signed release APK, and
 5. distributes it privately to a Firebase App Distribution tester group.
+
+**Status (2 Oct 2026):** the workflow is written but has not run yet. It needs the
+`android-production` environment, the Workload Identity and Firebase variables, and the
+signing secrets set on the repo first (see `docs/ANDROID_RELEASE_RECOVERY.md`).
 
 ## Project structure
 
